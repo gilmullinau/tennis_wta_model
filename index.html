@@ -1,4 +1,3 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,32 +7,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="./style.css" />
-  <style>
-    :root { --bg:#0b1020; --fg:#e9eef8; --card:#131a33; --accent:#6aa8ff; }
-    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system; background: var(--bg); color: var(--fg); }
-    header { padding: 16px 20px; border-bottom: 1px solid #233; }
-    header h1 { margin:0; font-size: 20px; }
-    .container { max-width: 1000px; margin: 0 auto; padding: 16px; }
-    .card { background: var(--card); border: 1px solid #24304f; border-radius: 14px; padding: 16px; margin-bottom: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.25); }
-    .row { display:flex; gap:12px; flex-wrap:wrap; align-items: center; }
-    button, input[type="file"], select, input[type="number"] {
-      background:#0f1530; color:var(--fg); border:1px solid #2a3862; border-radius:10px; padding:10px 12px;
-    }
-    button { cursor:pointer; }
-    button:disabled { opacity:.5; cursor: not-allowed; }
-    .grids { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
-    canvas { background:#0b0f1f; border-radius:12px; padding:8px; }
-    pre { background:#0b0f1f; border:1px solid #24304f; border-radius:12px; padding:12px; max-height:180px; overflow:auto; }
-    .form-row { display:flex; gap:10px; align-items:center; margin-bottom: 10px; }
-    label { min-width:180px; }
-    #predictPanel { display:none; }
-    .small { opacity:.8; font-size: 12px; }
-    .footer { text-align:center; opacity:.6; font-size:12px; padding:20px 0 30px; }
-    .btn-row { display:flex; gap:10px; flex-wrap: wrap; }
-    .metrics { font-size: 14px; }
-    .charts { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; min-height: 320px; }
-    @media (max-width: 900px) { .grids, .charts { grid-template-columns: 1fr; } label { min-width: 120px; } }
-  </style>
 </head>
 <body>
   <header>
@@ -42,17 +15,13 @@
 
   <div class="container">
     <div class="card">
-      <div class="row">
-        <input id="fileInput" type="file" accept=".csv" />
-        <div class="btn-row">
-          <button id="loadBtn">Load CSV</button>
-          <button id="trainBtn" disabled>Train Model</button>
-          <button id="evalBtn" disabled>Evaluate</button>
-          <button id="saveBtn" disabled>Save Model</button>
-          <button id="loadModelBtn">Load Saved</button>
-        </div>
+      <div class="btn-row">
+        <button id="trainBtn" disabled>Train Model</button>
+        <button id="evalBtn" disabled>Evaluate</button>
+        <button id="saveBtn" disabled>Save Model</button>
+        <button id="loadModelBtn">Load Saved</button>
       </div>
-      <div class="metrics" id="info" style="margin-top:8px;">Features: — | Train: — | Test: —</div>
+      <div class="metrics" id="info" style="margin-top:8px;">Loading dataset...</div>
     </div>
 
     <div class="card">
@@ -75,10 +44,9 @@
       <form id="predictForm"></form>
       <button id="predictBtn">Predict</button>
       <div id="predictOut" style="margin-top:10px; font-weight:600;"></div>
-      <div class="small" style="margin-top:6px;">Prediction uses the same preprocessing (scaling & one-hot) learned from the training CSV.</div>
     </div>
 
-    <div class="footer">Deploy on GitHub Pages — no server required.</div>
+    <div class="footer">Data: wta_data.csv — Preloaded from repository root.</div>
   </div>
 
   <script type="module" src="./app.js"></script>

@@ -1,6 +1,3 @@
-// app.js
-// Binds UI, uses DataLoader + ModelMLP, renders charts, enables predict-after-train.
-
 import { DataLoader } from "./data-loader.js";
 import { ModelMLP } from "./gru.js";
 
@@ -13,8 +10,6 @@ let lossChart = null;
 let cmChart = null;
 
 const els = {
-  fileInput: document.getElementById("fileInput"),
-  loadBtn: document.getElementById("loadBtn"),
   trainBtn: document.getElementById("trainBtn"),
   evalBtn: document.getElementById("evalBtn"),
   saveBtn: document.getElementById("saveBtn"),
@@ -44,36 +39,28 @@ function showPredictPanel(show) {
   els.predictPanel.style.display = show ? "block" : "none";
 }
 
-async function loadCSV() {
+async function autoLoadCSV() {
   try {
-    const file = els.fileInput.files?.[0];
-    if (!file) {
-      alert("Please choose a CSV file first.");
-      return;
-    }
-    log(`Loading CSV: ${file.name}`);
     loader = new DataLoader();
+    log("Loading default dataset (wta_data.csv)...");
+    const response = await fetch("./wta_data.csv");
+    const blob = await response.blob();
+    const file = new File([blob], "wta_data.csv");
     dataset = await loader.loadCSV(file);
-    log(`Loaded dataset. Train: ${dataset.X_train.shape[0]} rows, Test: ${dataset.X_test.shape[0]} rows.`);
-    els.info.textContent = `Features: ${dataset.featureNames.length} | Train: ${dataset.X_train.shape[0]} | Test: ${dataset.X_test.shape[0]}`;
+
+    els.info.textContent = `Loaded wta_data.csv — Train: ${dataset.X_train.shape[0]}, Test: ${dataset.X_test.shape[0]}`;
+    log("Dataset successfully loaded.");
     enableTraining(true);
-    showPredictPanel(false);
+    buildPredictForm();
   } catch (err) {
-    console.error(err);
-    alert("Failed to load CSV: " + err.message);
-    log(`Error: ${err.message}`);
+    log("Error loading dataset: " + err.message);
+    alert("Failed to load wta_data.csv. Please check that the file exists in the project root.");
   }
 }
 
 async function trainModel() {
-  if (!dataset) {
-    alert("Load a dataset first.");
-    return;
-  }
-  if (model) {
-    model.model.dispose();
-    model = null;
-  }
+  if (!dataset) return alert("Dataset not loaded yet.");
+
   model = new ModelMLP(dataset.featureNames.length);
   model.build();
   log("Training started...");
@@ -91,21 +78,18 @@ async function trainModel() {
       drawLossChart(losses, valAcc);
     }
   });
-  log("Training completed.");
+  log("Training complete.");
   els.saveBtn.disabled = false;
   els.evalBtn.disabled = false;
   showPredictPanel(true);
 }
 
 async function evaluateModel() {
-  if (!dataset || !model) {
-    alert("Load data and train the model first.");
-    return;
-  }
+  if (!dataset || !model) return alert("Train the model first.");
   log("Evaluating on test set...");
   const { loss, acc } = await model.evaluate(dataset.X_test, dataset.y_test);
-  log(`Test Loss=${loss.toFixed(4)} | Test Accuracy=${acc.toFixed(4)}`);
-  const cm = await model.confusionMatrix(dataset.X_test, dataset.y_test, 0.5);
+  log(`Test Loss=${loss.toFixed(4)} | Accuracy=${acc.toFixed(4)}`);
+  const cm = await model.confusionMatrix(dataset.X_test, dataset.y_test);
   drawConfusionMatrix(cm);
 }
 
@@ -127,127 +111,80 @@ function drawLossChart(losses, valAcc) {
 
 function drawConfusionMatrix({ tp, tn, fp, fn }) {
   const ctx = els.cmCanvas.getContext("2d");
-  const data = [
-    [tn, fp],
-    [fn, tp]
-  ];
-  const labels = ["Pred 0", "Pred 1"];
-  const bk = (v) => v;
-
-  // Convert to flat dataset for Chart.js matrix-like via stacked bars or bubble workaround
-  // Simpler: show as 2 bar groups (Actual 0 and Actual 1) with two stacks.
   if (cmChart) cmChart.destroy();
   cmChart = new Chart(ctx, {
     type: "bar",
     data: {
       labels: ["Actual 0", "Actual 1"],
       datasets: [
-        { label: "Pred 0", data: [data[0][0], data[1][0]] },
-        { label: "Pred 1", data: [data[0][1], data[1][1]] }
+        { label: "Pred 0", data: [tn, fn] },
+        { label: "Pred 1", data: [fp, tp] }
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        tooltip: { enabled: true },
-        legend: { position: "bottom" }
-      },
-      scales: { y: { beginAtZero: true, precision: 0 } }
+      plugins: { legend: { position: "bottom" } },
+      scales: { y: { beginAtZero: true } }
     }
   });
-  log(`Confusion Matrix: TN=${tn}, FP=${fp}, FN=${fn}, TP=${tp}`);
 }
 
-// Save/load model to localStorage
-async function saveModel() {
-  if (!model) return;
-  await model.save();
-  log("Model saved to browser storage.");
-}
-async function loadSavedModel() {
-  try {
-    const m = new ModelMLP(0);
-    await m.load();
-    model = m;
-    log("Model loaded from browser storage.");
-    showPredictPanel(true);
-  } catch (e) {
-    alert("No saved model found.");
-  }
-}
-
-// Predict panel
 function buildPredictForm() {
-  // Build dynamic form only once, based on loader artifacts
   if (!loader || !dataset) return;
   const form = els.predictForm;
   form.innerHTML = "";
 
-  // Numeric inputs
-  const numeric = loader.numericCols;
-  numeric.forEach((c) => {
+  loader.numericCols.forEach((c) => {
     const div = document.createElement("div");
     div.className = "form-row";
-    div.innerHTML = `
-      <label>${c}</label>
-      <input type="number" step="any" name="${c}" required />
-    `;
+    div.innerHTML = `<label>${c}</label><input type="number" step="any" name="${c}" required />`;
     form.appendChild(div);
   });
 
-  // Categorical selects
   loader.categoricalCols.forEach((col) => {
     const levels = loader.catLevels[col] || [];
     const div = document.createElement("div");
     div.className = "form-row";
     const opts = levels.map((l) => `<option value="${l}">${l}</option>`).join("");
-    div.innerHTML = `
-      <label>${col}</label>
-      <select name="${col}">${opts}</select>
-    `;
+    div.innerHTML = `<label>${col}</label><select name="${col}">${opts}</select>`;
     form.appendChild(div);
   });
 }
 
-async function handlePredict() {
-  if (!model || !loader) {
-    alert("Train or load a model first.");
-    return;
-  }
+async function handlePredict(e) {
+  e.preventDefault();
+  if (!model || !loader) return alert("Train or load a model first.");
   const formData = new FormData(els.predictForm);
   const userInput = {};
-  for (const [k, v] of formData.entries()) {
-    userInput[k] = v;
-  }
-  try {
-    const vec = loader.vectorizeForPredict(userInput);
-    const x = tf.tensor2d([Array.from(vec)]);
-    const yProb = model.predictProba(x);
-    const prob = (await yProb.data())[0];
-    x.dispose();
-    yProb.dispose();
-    const pred = prob >= 0.5 ? 1 : 0;
-    els.predictOut.textContent = `Predicted: ${pred === 1 ? "Player 1 wins" : "Player 1 loses"} (p=${prob.toFixed(3)})`;
-  } catch (e) {
-    alert("Prediction failed: " + e.message);
-  }
+  for (const [k, v] of formData.entries()) userInput[k] = v;
+  const vec = loader.vectorizeForPredict(userInput);
+  const x = tf.tensor2d([Array.from(vec)]);
+  const yProb = model.predictProba(x);
+  const prob = (await yProb.data())[0];
+  const pred = prob >= 0.5 ? 1 : 0;
+  els.predictOut.textContent = `Predicted: ${pred === 1 ? "Player 1 wins" : "Player 1 loses"} (p=${prob.toFixed(3)})`;
+  x.dispose(); yProb.dispose();
 }
 
-// Event listeners
-els.loadBtn.addEventListener("click", async () => {
-  await loadCSV();
-  buildPredictForm();
-});
+// Event bindings
 els.trainBtn.addEventListener("click", trainModel);
 els.evalBtn.addEventListener("click", evaluateModel);
-els.saveBtn.addEventListener("click", saveModel);
-els.loadModelBtn.addEventListener("click", loadSavedModel);
-els.predictBtn.addEventListener("click", (e) => {
-  e.preventDefault();
-  handlePredict();
+els.saveBtn.addEventListener("click", async () => {
+  if (model) {
+    await model.save();
+    log("Model saved.");
+  }
 });
+els.loadModelBtn.addEventListener("click", async () => {
+  const m = new ModelMLP(0);
+  await m.load();
+  model = m;
+  log("Model loaded from storage.");
+  showPredictPanel(true);
+});
+els.predictBtn.addEventListener("click", handlePredict);
 
-// Initial state
 enableTraining(false);
 showPredictPanel(false);
+autoLoadCSV(); // auto-load CSV at startup
