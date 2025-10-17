@@ -1,6 +1,5 @@
 // app.js
-// Loads wta_data.csv from project root (auto), with manual file upload fallback.
-// Trains MLP, evaluates, draws charts, and provides a simple prediction form.
+// Loads CSV automatically or via manual upload, trains, evaluates, and visualizes results.
 
 import { DataLoader } from "./data-loader.js";
 import { ModelMLP } from "./gru.js";
@@ -8,7 +7,6 @@ import { ModelMLP } from "./gru.js";
 let loader = null;
 let model = null;
 let dataset = null;
-
 let lossChart = null;
 let cmChart = null;
 
@@ -60,7 +58,6 @@ async function parseAndInit(text) {
 }
 
 async function autoLoadCSV() {
-  // Try to fetch from repo root; add cache buster to avoid stale CDN cache
   const url = `./wta_data.csv?v=${Date.now()}`;
   try {
     const res = await fetch(url, { cache: "no-store" });
@@ -79,7 +76,6 @@ function buildPredictForm() {
   const form = els.predictForm;
   form.innerHTML = "";
 
-  // Numeric inputs
   loader.numericCols.forEach((c) => {
     const div = document.createElement("div");
     div.className = "form-row";
@@ -87,7 +83,6 @@ function buildPredictForm() {
     form.appendChild(div);
   });
 
-  // Categorical dropdowns with fitted levels
   loader.categoricalCols.forEach((col) => {
     const levels = loader.catLevels[col] || [];
     const div = document.createElement("div");
@@ -172,23 +167,19 @@ function drawConfusionMatrix({ tp, tn, fp, fn }) {
 async function handlePredict(e) {
   e.preventDefault();
   if (!model || !loader) return alert("Train or load a model first.");
-  try {
-    const formData = new FormData(els.predictForm);
-    const userInput = {};
-    for (const [k, v] of formData.entries()) userInput[k] = v;
-    const vec = loader.vectorizeForPredict(userInput);
-    const x = tf.tensor2d([Array.from(vec)], [1, vec.length], "float32");
-    const yProb = model.predictProba(x);
-    const prob = (await yProb.data())[0];
-    const pred = prob >= 0.5 ? 1 : 0;
-    els.predictOut.textContent = `Predicted: ${pred === 1 ? "Player 1 wins" : "Player 1 loses"} (p=${prob.toFixed(3)})`;
-    x.dispose(); yProb.dispose();
-  } catch (err) {
-    alert(`Prediction error: ${err.message}`);
-  }
+  const formData = new FormData(els.predictForm);
+  const userInput = {};
+  for (const [k, v] of formData.entries()) userInput[k] = v;
+  const vec = loader.vectorizeForPredict(userInput);
+  const x = tf.tensor2d([Array.from(vec)], [1, vec.length], "float32");
+  const yProb = model.predictProba(x);
+  const prob = (await yProb.data())[0];
+  const pred = prob >= 0.5 ? 1 : 0;
+  els.predictOut.textContent = `Predicted: ${pred === 1 ? "Player 1 wins" : "Player 1 loses"} (p=${prob.toFixed(3)})`;
+  x.dispose(); yProb.dispose();
 }
 
-// --- Events ---
+// Buttons
 els.trainBtn.addEventListener("click", trainModel);
 els.evalBtn.addEventListener("click", evaluateModel);
 els.saveBtn.addEventListener("click", async () => {
@@ -198,28 +189,19 @@ els.loadModelBtn.addEventListener("click", async () => {
   try {
     const m = new ModelMLP(0);
     await m.load();
-    // Recreate inputDim using current dataset (if available)
-    if (dataset && dataset.featureNames) {
-      // If loaded model input shape mismatches, rebuild not necessary here since tfjs stores it.
-    }
     model = m;
     log("Model loaded from browser storage.");
     showPredictPanel(true);
-  } catch (e) {
+  } catch {
     alert("No saved model found or load failed.");
   }
 });
-
-// Manual CSV upload fallback
+els.predictBtn.addEventListener("click", handlePredict);
 els.csvInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
-  try {
-    const text = await file.text();
-    await parseAndInit(text);
-  } catch (err) {
-    alert(`Failed to read CSV: ${err.message}`);
-  }
+  const text = await file.text();
+  await parseAndInit(text);
 });
 
 // Init

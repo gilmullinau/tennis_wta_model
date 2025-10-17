@@ -1,13 +1,8 @@
-// gru.js
-// Despite the filename, this implements an MLP binary classifier to mirror your Python notebook.
-// Provides: ModelMLP with build(), train(), evaluate(), predictProba(), confusionMatrix(), save(), load().
-
-import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js";
+// gru.js (MLP model implementation)
 
 export class ModelMLP {
   constructor(inputDim) {
     this.inputDim = inputDim;
-    /** @type {tf.LayersModel|null} */
     this.model = null;
     this.modelKey = "wta-mlp-v1";
   }

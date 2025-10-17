@@ -2,25 +2,18 @@
 // Reads CSV text, preprocesses: drop leakage columns, numeric scaling, one-hot for categoricals,
 // stratified split train/test, returns tf.Tensors and feature metadata.
 
-import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js";
-
 export class DataLoader {
   constructor() {
-    // Numeric feature columns expected in CSV (keep order stable)
     this.numericCols = [
       "rank_diff", "pts_diff", "odd_diff",
       "h2h_advantage", "last_winner", "surface_winrate_adv", "year"
     ];
-    // Categorical features for one-hot
     this.categoricalCols = ["Surface", "Court", "Round"];
-    // Columns to drop to avoid leakage / IDs
     this.dropCols = [
       "Tournament", "Date", "Best of", "Player_1", "Player_2", "Winner", "Score",
-      // we keep Rank_*, Pts_*, Odd_* only if already transformed into diffs above
       "Rank_1","Rank_2","Pts_1","Pts_2","Odd_1","Odd_2"
     ];
     this.labelCol = "y";
-    // Fitted metadata
     this.catLevels = {};
     this.scaler = { mean: {}, std: {} };
     this.featureNames = [];
@@ -45,16 +38,12 @@ export class DataLoader {
 
     // Drop leakage columns; cast types
     for (const row of raw) {
-      // drop known leakage/ID cols if exist
       for (const c of this.dropCols) if (c in row) delete row[c];
-      // y to number (0/1)
       row[this.labelCol] = this._toNumber(row[this.labelCol]);
-      // numeric feature casting
       for (const c of this.numericCols) {
         if (row[c] === undefined) continue;
         row[c] = this._toNumber(row[c]);
       }
-      // leave categoricals as string
     }
 
     // Filter invalid rows
@@ -65,16 +54,14 @@ export class DataLoader {
       }
       return true;
     });
-    if (filtered.length < 10) {
-      throw new Error(`Too few valid rows after filtering: ${filtered.length}`);
-    }
+    if (filtered.length < 10) throw new Error(`Too few valid rows: ${filtered.length}`);
 
     // Fit categorical levels and build design matrix
     this._fitCategoricals(filtered);
     const { X, y, featureNames } = this._buildDesignMatrix(filtered);
     this.featureNames = featureNames;
 
-    // Normalize numeric columns (z-score)
+    // Normalize numeric columns
     this._fitScaler(X, featureNames);
     const Xscaled = this._transformWithScaler(X, featureNames);
 
@@ -101,15 +88,12 @@ export class DataLoader {
   }
 
   vectorizeForPredict(userInput) {
-    // Build row object in feature space
     const rowObj = {};
-    // numeric
     for (const c of this.numericCols) {
       const v = this._toNumber(userInput[c]);
       if (!Number.isFinite(v)) throw new Error(`Numeric input "${c}" missing or invalid.`);
       rowObj[c] = v;
     }
-    // categoricals → one-hot across fitted levels
     for (const col of this.categoricalCols) {
       const levels = this.catLevels[col] || [];
       const provided = (userInput[col] ?? "").toString();
@@ -118,7 +102,6 @@ export class DataLoader {
         rowObj[key] = provided === lvl ? 1 : 0;
       }
     }
-    // map to feature vector order + scale numerics
     const vec = this.featureNames.map((f) => {
       let v = rowObj[f] ?? 0;
       if (this.numericCols.includes(f)) {
@@ -131,7 +114,6 @@ export class DataLoader {
     return Float32Array.from(vec);
   }
 
-  // ---------- helpers ----------
   _detectDelimiter(text) {
     const firstLine = text.split(/\r?\n/)[0] || "";
     const comma = (firstLine.match(/,/g) || []).length;
