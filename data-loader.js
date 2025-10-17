@@ -1,64 +1,42 @@
 // data-loader.js
 // Reads CSV text, preprocesses: drop leakage columns, numeric scaling, one-hot for categoricals,
-// stratified split train/test, returns tf.Tensors and feature metadata. Also builds player indexes
-// to allow selecting players in the prediction UI.
+// stratified split train/test, returns tf.Tensors and feature metadata. Also builds a player
+// directory so the UI can derive feature vectors from player names and contextual inputs.
 const tf = window.tf;
 
 export class DataLoader {
   constructor() {
     this.numericCandidates = [
       "rank_diff", "pts_diff", "odd_diff",
-      "elo_diff", "surface_elo_diff",
-      "form_diff", "surface_form_diff",
-      "games_margin_diff", "sets_margin_diff",
-      "rest_days_diff", "tiebreak_rate_diff",
-      "rank_trend_diff", "points_trend_diff",
-      "h2h_advantage", "last_winner_indicator", "last_winner",
+      "h2h_advantage", "last_winner", "last_winner_indicator",
       "surface_winrate_adv", "year"
     ];
     this.categoricalCandidates = ["Surface", "Court", "Round"];
     this.dropCols = [
       "Tournament", "Date", "Best of", "Player_1", "Player_2", "Winner", "Score",
-      "Rank_1", "Rank_2", "Pts_1", "Pts_2", "Odd_1", "Odd_2", "match_id",
+      "Rank_1", "Rank_2", "Pts_1", "Pts_2", "Odd_1", "Odd_2",
       "tournament", "date", "best_of", "player_1", "player_2", "winner", "score",
       "rank_1", "rank_2", "pts_1", "pts_2", "odd_1", "odd_2"
     ];
+
     this.numericCols = [];
     this.categoricalCols = [];
     this.labelCol = "y";
     this.catLevels = {};
     this.scaler = { mean: {}, std: {} };
     this.featureNames = [];
-    this.headerAliases = new Map();
 
-    // Player metadata for prediction UI
+    // Metadata for player-driven predictions
     this.players = [];
     this.surfaces = [];
     this.rounds = [];
     this.courts = [];
     this.latestYear = null;
-    this.playerLookup = new Map(); // lowercase -> canonical name
+
+    this.headerAliases = new Map();
     this.playerMeta = new Map();
+    this.playerLookup = new Map();
     this.h2h = new Map();
-
-    this.historyWindow = 10;
-    this.surfaceHistoryWindow = 6;
-
-    this.metricSources = {
-      rank: { p1: ["rank_1", "rank1"], p2: ["rank_2", "rank2"] },
-      pts: { p1: ["pts_1", "points_1"], p2: ["pts_2", "points_2"] },
-      odd: { p1: ["odd_1", "odds_1"], p2: ["odd_2", "odds_2"] },
-      elo: { p1: ["elo_p1", "elo1", "elo_pre", "elo_player1"], p2: ["elo_p2", "elo2", "elo_player2", "elo_opponent"] },
-      surfaceElo: { p1: ["surface_elo_p1", "surface_elo1"], p2: ["surface_elo_p2", "surface_elo2"] },
-      form: { p1: ["p1_form", "form_p1"], p2: ["p2_form", "form_p2"] },
-      surfaceForm: { p1: ["p1_surface_form", "surface_form_p1"], p2: ["p2_surface_form", "surface_form_p2"] },
-      gamesMargin: { p1: ["p1_games_margin", "games_margin_p1"], p2: ["p2_games_margin", "games_margin_p2"] },
-      setsMargin: { p1: ["p1_sets_margin", "sets_margin_p1"], p2: ["p2_sets_margin", "sets_margin_p2"] },
-      restDays: { p1: ["p1_rest_days", "rest_days_p1"], p2: ["p2_rest_days", "rest_days_p2"] },
-      tiebreakRate: { p1: ["p1_tiebreak_rate", "tiebreak_rate_p1"], p2: ["p2_tiebreak_rate", "tiebreak_rate_p2"] },
-      rankTrend: { p1: ["p1_rank_trend", "rank_trend_p1"], p2: ["p2_rank_trend", "rank_trend_p2"] },
-      pointsTrend: { p1: ["p1_points_trend", "points_trend_p1"], p2: ["p2_points_trend", "points_trend_p2"] },
-    };
   }
 
   async loadCSVText(csvText) {
@@ -68,14 +46,14 @@ export class DataLoader {
     const headers = rows[0].map((h) => (h ?? "").trim());
     const dataRows = rows.slice(1);
 
-    const headerSet = new Set(headers);
     headers.forEach((h) => {
       const key = (h ?? "").toString().trim().toLowerCase();
       if (key && !this.headerAliases.has(key)) this.headerAliases.set(key, h);
     });
+
+    const headerSet = new Set(headers);
     this.numericCols = this.numericCandidates.filter((c) => headerSet.has(c));
     this.categoricalCols = this.categoricalCandidates.filter((c) => headerSet.has(c));
-
     if (this.numericCols.length === 0) {
       throw new Error("No numeric feature columns found in CSV.");
     }
@@ -92,10 +70,10 @@ export class DataLoader {
       throw new Error(`Label column "${this.labelCol}" not found in CSV.`);
     }
 
-    // Build rich metadata (players, surfaces, recent form) before mutating rows
-    this._buildPlayerMetadata(raw);
+    // Build player directory and metadata before mutating rows
+    this._buildPlayerDirectory(raw);
 
-    // Drop leakage columns; cast types
+    // Drop leakage columns and cast numeric values
     for (const row of raw) {
       for (const c of this.dropCols) {
         if (c in row) delete row[c];
@@ -115,14 +93,16 @@ export class DataLoader {
       }
       return true;
     });
-    if (filtered.length < 10) throw new Error(`Too few valid rows: ${filtered.length}`);
+    if (filtered.length < 10) {
+      throw new Error(`Too few valid rows: ${filtered.length}`);
+    }
 
-    // Fit categorical levels and build design matrix
+    // Prepare categorical encoders
     this._fitCategoricals(filtered);
     const { X, y, featureNames } = this._buildDesignMatrix(filtered);
     this.featureNames = featureNames;
 
-    // Normalize numeric columns
+    // Fit/transform scaler
     this._fitScaler(X, featureNames);
     const Xscaled = this._transformWithScaler(X, featureNames);
 
@@ -192,7 +172,13 @@ export class DataLoader {
     const chosenSurface = surface ?? this._defaultSurface();
     const chosenCourt = court ?? this._defaultCategorical("Court");
     const chosenRound = round ?? this._defaultCategorical("Round");
-    const ctx = { surface: chosenSurface, court: chosenCourt, round: chosenRound, year };
+
+    const ctx = {
+      surface: chosenSurface,
+      court: chosenCourt,
+      round: chosenRound,
+      year,
+    };
 
     const numericValues = {};
     const missing = [];
@@ -226,10 +212,14 @@ export class DataLoader {
     };
   }
 
-  _buildPlayerMetadata(rows) {
+  _buildPlayerDirectory(rows) {
     this.playerMeta = new Map();
     this.playerLookup = new Map();
     this.h2h = new Map();
+    this.players = [];
+    this.surfaces = [];
+    this.rounds = [];
+    this.courts = [];
     this.latestYear = null;
 
     const surfaceSet = new Set();
@@ -243,28 +233,30 @@ export class DataLoader {
         if (!player1 || !player2) return null;
         const dateStr = this._stringValue(row, ["date", "Date"]);
         const date = dateStr ? new Date(dateStr) : null;
-        const ts = date && Number.isFinite(date.getTime()) ? date : null;
+        const ts = date && Number.isFinite(date.getTime()) ? date.getTime() : Number.POSITIVE_INFINITY;
         const surface = this._stringValue(row, ["surface", "Surface"]) || null;
         const round = this._stringValue(row, ["round", "Round"]) || null;
         const court = this._stringValue(row, ["court", "Court"]) || null;
         const winner = this._stringValue(row, ["winner", "Winner"]);
-        return { row, player1, player2, date: ts, idx, surface, round, court, winner };
+
+        return {
+          row,
+          idx,
+          ts,
+          player1: this._canonical(player1),
+          player2: this._canonical(player2),
+          winner: this._canonical(winner),
+          surface,
+          round,
+          court,
+          date,
+        };
       })
       .filter(Boolean)
-      .sort((a, b) => {
-        if (a.date && b.date) {
-          const diff = a.date - b.date;
-          if (diff !== 0) return diff;
-        } else if (a.date && !b.date) {
-          return -1;
-        } else if (!a.date && b.date) {
-          return 1;
-        }
-        return a.idx - b.idx;
-      });
+      .sort((a, b) => (a.ts === b.ts ? a.idx - b.idx : a.ts - b.ts));
 
     for (const item of parsed) {
-      const { player1, player2, row, date, surface, round, court, winner } = item;
+      const { row, player1, player2, winner, surface, round, court, date } = item;
       if (surface) surfaceSet.add(surface);
       if (round) roundSet.add(round);
       if (court) courtSet.add(court);
@@ -272,9 +264,13 @@ export class DataLoader {
         this.latestYear = Math.max(this.latestYear ?? 0, date.getFullYear());
       }
 
-      this._updatePlayerEntry(player1, row, true, date, surface, winner === player1);
-      this._updatePlayerEntry(player2, row, false, date, surface, winner === player2);
-      this._updateHeadToHead(player1, player2, winner);
+      const entry1 = this._ensurePlayerEntry(player1);
+      const entry2 = this._ensurePlayerEntry(player2);
+      const winnerCanonical = winner || "";
+
+      this._updatePlayerEntry(entry1, row, true, surface, winnerCanonical === player1);
+      this._updatePlayerEntry(entry2, row, false, surface, winnerCanonical === player2);
+      this._updateHeadToHead(player1, player2, winnerCanonical);
     }
 
     this.players = Array.from(this.playerMeta.keys()).sort((a, b) => a.localeCompare(b));
@@ -283,279 +279,130 @@ export class DataLoader {
     this.courts = courtSet.size ? Array.from(courtSet.values()).sort((a, b) => a.localeCompare(b)) : [];
   }
 
-  _updatePlayerEntry(name, row, isPlayer1, date, surface, won) {
-    const canonical = name.trim();
-    if (!this.playerMeta.has(canonical)) {
-      this.playerMeta.set(canonical, {
-        name: canonical,
-        lastMatchDate: null,
-        latest: {},
-        rankHistory: [],
-        pointsHistory: [],
-        recent: [],
-        surfaceRecent: new Map(),
+  _ensurePlayerEntry(name) {
+    if (!name) return null;
+    if (!this.playerMeta.has(name)) {
+      this.playerMeta.set(name, {
+        name,
+        lastRank: null,
+        lastPts: null,
+        lastOdd: null,
         surfaceStats: new Map(),
+        totalWins: 0,
+        totalMatches: 0,
       });
-      this.playerLookup.set(canonical.toLowerCase(), canonical);
+      this.playerLookup.set(name.toLowerCase(), name);
     }
-    const entry = this.playerMeta.get(canonical);
+    return this.playerMeta.get(name);
+  }
+
+  _updatePlayerEntry(entry, row, isPlayer1, surface, won) {
     if (!entry) return;
+    const rank = this._numericValue(row, isPlayer1 ? ["rank_1", "Rank_1"] : ["rank_2", "Rank_2"]);
+    const pts = this._numericValue(row, isPlayer1 ? ["pts_1", "Pts_1"] : ["pts_2", "Pts_2"]);
+    const odd = this._numericValue(row, isPlayer1 ? ["odd_1", "Odd_1"] : ["odd_2", "Odd_2"]);
 
-    for (const [metric, sources] of Object.entries(this.metricSources)) {
-      const candidates = (isPlayer1 ? sources.p1 : sources.p2) || [];
-      const value = this._numericValue(row, candidates);
-      if (!Number.isFinite(value)) continue;
-      if (metric === "surfaceElo") {
-        const sEntry = this._ensureSurfaceEntry(entry, surface);
-        sEntry.latest.surfaceElo = value;
-      } else if (metric === "surfaceForm") {
-        const sEntry = this._ensureSurfaceEntry(entry, surface);
-        sEntry.latest.surfaceForm = value;
-      } else {
-        entry.latest[metric] = value;
-      }
-      if (metric === "rank") {
-        entry.rankHistory.push(value);
-        if (entry.rankHistory.length > 5) entry.rankHistory.shift();
-        if (entry.rankHistory.length >= 2) {
-          const n = entry.rankHistory.length;
-          entry.latest.rankTrend = entry.rankHistory[n - 1] - entry.rankHistory[n - 2];
-        }
-      }
-      if (metric === "pts") {
-        entry.pointsHistory.push(value);
-        if (entry.pointsHistory.length > 5) entry.pointsHistory.shift();
-        if (entry.pointsHistory.length >= 2) {
-          const n = entry.pointsHistory.length;
-          entry.latest.pointsTrend = entry.pointsHistory[n - 1] - entry.pointsHistory[n - 2];
-        }
-      }
-    }
+    if (Number.isFinite(rank)) entry.lastRank = rank;
+    if (Number.isFinite(pts)) entry.lastPts = pts;
+    if (Number.isFinite(odd)) entry.lastOdd = odd;
 
-    if (date instanceof Date && Number.isFinite(date.getTime())) {
-      if (entry.lastMatchDate instanceof Date) {
-        const diffDays = Math.max(0, Math.round((date - entry.lastMatchDate) / (1000 * 60 * 60 * 24)));
-        entry.latest.restDays = Math.min(60, diffDays);
-      }
-      entry.lastMatchDate = date;
-    }
-
-    const historyRecord = this._historyRecord(row, isPlayer1, won, surface);
-    if (historyRecord) {
-      entry.recent.push(historyRecord);
-      if (entry.recent.length > this.historyWindow) entry.recent.shift();
-      this._recomputeAverages(entry);
-      const sEntry = this._ensureSurfaceEntry(entry, surface);
-      sEntry.recent.push(historyRecord);
-      if (sEntry.recent.length > this.surfaceHistoryWindow) sEntry.recent.shift();
-      this._recomputeSurfaceAverages(sEntry);
-      const stats = this._ensureSurfaceStats(entry, surface);
+    if (surface) {
+      const stats = entry.surfaceStats.get(surface) || { wins: 0, matches: 0 };
       stats.matches += 1;
-      stats.wins += won ? 1 : 0;
+      if (won) stats.wins += 1;
+      entry.surfaceStats.set(surface, stats);
     }
-  }
 
-  _historyRecord(row, isPlayer1, won, surface) {
-    const gamesDelta = this._numericValue(row, ["games_delta"]);
-    const setsDelta = this._numericValue(row, ["sets_delta"]);
-    const tieBreaks = this._numericValue(row, ["tie_breaks_played", "tie_breaks", "tiebreaks"]);
-    const record = {
-      won: won ? 1 : 0,
-      gamesDelta: Number.isFinite(gamesDelta) ? (isPlayer1 ? gamesDelta : -gamesDelta) : null,
-      setsDelta: Number.isFinite(setsDelta) ? (isPlayer1 ? setsDelta : -setsDelta) : null,
-      tiebreak: Number.isFinite(tieBreaks) ? (tieBreaks > 0 ? 1 : 0) : null,
-      surface,
-    };
-    return record;
-  }
-
-  _recomputeAverages(entry) {
-    const { recent } = entry;
-    if (!recent.length) return;
-    entry.latest.form = this._avg(recent.map((r) => r.won), 0, 3);
-    entry.latest.gamesMargin = this._avg(
-      recent.map((r) => r.gamesDelta).filter((v) => Number.isFinite(v)),
-      0,
-      3
-    );
-    entry.latest.setsMargin = this._avg(
-      recent.map((r) => r.setsDelta).filter((v) => Number.isFinite(v)),
-      0,
-      3
-    );
-    entry.latest.tiebreakRate = this._avg(
-      recent.map((r) => r.tiebreak).filter((v) => Number.isFinite(v)),
-      0,
-      3
-    );
-  }
-
-  _ensureSurfaceEntry(entry, surface) {
-    const key = surface || "Unknown";
-    if (!entry.surfaceRecent.has(key)) {
-      entry.surfaceRecent.set(key, {
-        recent: [],
-        latest: {},
-      });
-    }
-    return entry.surfaceRecent.get(key);
-  }
-
-  _ensureSurfaceStats(entry, surface) {
-    const key = surface || "Unknown";
-    if (!entry.surfaceStats.has(key)) {
-      entry.surfaceStats.set(key, { wins: 0, matches: 0 });
-    }
-    return entry.surfaceStats.get(key);
-  }
-
-  _recomputeSurfaceAverages(surfaceEntry) {
-    const { recent } = surfaceEntry;
-    if (!recent.length) return;
-    surfaceEntry.latest.surfaceForm = this._avg(recent.map((r) => r.won), 0, 2);
-    surfaceEntry.latest.tiebreakRate = this._avg(
-      recent.map((r) => r.tiebreak).filter((v) => Number.isFinite(v)),
-      0,
-      2
-    );
-  }
-
-  _avg(values, fallback = 0, minCount = 1) {
-    const filtered = values.filter((v) => Number.isFinite(v));
-    if (filtered.length < minCount) return fallback;
-    const sum = filtered.reduce((acc, v) => acc + v, 0);
-    return sum / filtered.length;
+    entry.totalMatches += 1;
+    if (won) entry.totalWins += 1;
   }
 
   _updateHeadToHead(player1, player2, winner) {
-    const key12 = this._pairKey(player1, player2);
-    const key21 = this._pairKey(player2, player1);
-    const normalizedWinner = (winner ?? "").toLowerCase();
-
-    const update = (key) => {
-      const rec = this.h2h.get(key) || { wins: 0, losses: 0, lastWinnerIndicator: 0 };
-      const [left, right] = key.split("|||");
-      if (normalizedWinner) {
-        if (normalizedWinner === left.toLowerCase()) {
-          rec.wins += 1;
-          rec.lastWinnerIndicator = 1;
-        } else if (normalizedWinner === right.toLowerCase()) {
-          rec.losses += 1;
-          rec.lastWinnerIndicator = -1;
-        }
+    const update = (left, right) => {
+      if (!left || !right) return;
+      const key = `${left}|||${right}`;
+      const record = this.h2h.get(key) || { wins: 0, losses: 0, lastWinner: "", advantage: 0 };
+      if (winner && winner === left) {
+        record.wins += 1;
+        record.lastWinner = left;
+      } else if (winner && winner === right) {
+        record.losses += 1;
+        record.lastWinner = right;
       }
-      const total = rec.wins + rec.losses;
-      rec.advantage = total > 0 ? (rec.wins - rec.losses) / total : 0;
-      this.h2h.set(key, rec);
+      const total = record.wins + record.losses;
+      record.advantage = total > 0 ? (record.wins - record.losses) / total : 0;
+      this.h2h.set(key, record);
     };
 
-    update(key12);
-    update(key21);
-  }
-
-  _pairKey(a, b) {
-    return `${a}|||${b}`;
+    update(player1, player2);
+    update(player2, player1);
   }
 
   _deriveFeature(feature, player1, player2, ctx) {
     const entry1 = this.playerMeta.get(player1);
     const entry2 = this.playerMeta.get(player2);
     if (!entry1 || !entry2) return NaN;
-    const surface = ctx.surface || this._defaultSurface();
-
-    const diff = (metric, { surfaceSpecific = false } = {}) => {
-      const a = this._metricValue(entry1, metric, surfaceSpecific ? surface : null);
-      const b = this._metricValue(entry2, metric, surfaceSpecific ? surface : null);
-      if (!Number.isFinite(a) || !Number.isFinite(b)) return NaN;
-      return a - b;
-    };
 
     switch (feature) {
-      case "rank_diff":
-        return diff("rank");
-      case "pts_diff":
-        return diff("pts");
-      case "odd_diff":
-        return diff("odd");
-      case "elo_diff":
-        return diff("elo");
-      case "surface_elo_diff":
-        return diff("surfaceElo", { surfaceSpecific: true });
-      case "form_diff":
-        return diff("form");
-      case "surface_form_diff":
-        return diff("surfaceForm", { surfaceSpecific: true });
-      case "games_margin_diff":
-        return diff("gamesMargin");
-      case "sets_margin_diff":
-        return diff("setsMargin");
-      case "rest_days_diff":
-        return diff("restDays");
-      case "tiebreak_rate_diff":
-        return diff("tiebreakRate");
-      case "rank_trend_diff":
-        return diff("rankTrend");
-      case "points_trend_diff":
-        return diff("pointsTrend");
-      case "surface_winrate_adv":
-        return this._surfaceWinrateAdvantage(entry1, entry2, surface);
-      case "h2h_advantage": {
-        const stats = this._getHeadToHeadStats(player1, player2);
-        return stats.advantage;
+      case "rank_diff": {
+        const a = this._finite(entry2.lastRank);
+        const b = this._finite(entry1.lastRank);
+        return this._diff(a, b);
       }
-      case "last_winner_indicator": {
-        const stats = this._getHeadToHeadStats(player1, player2);
-        return stats.lastWinnerIndicator ?? 0;
+      case "pts_diff": {
+        const a = this._finite(entry1.lastPts);
+        const b = this._finite(entry2.lastPts);
+        return this._diff(a, b);
+      }
+      case "odd_diff": {
+        const a = this._finite(entry2.lastOdd);
+        const b = this._finite(entry1.lastOdd);
+        return this._diff(a, b);
+      }
+      case "surface_winrate_adv": {
+        const rate1 = this._surfaceWinrate(entry1, ctx.surface);
+        const rate2 = this._surfaceWinrate(entry2, ctx.surface);
+        if (!Number.isFinite(rate1) || !Number.isFinite(rate2)) return NaN;
+        return rate1 - rate2;
+      }
+      case "h2h_advantage": {
+        const stats = this._getHeadToHead(player1, player2);
+        return stats.advantage ?? 0;
       }
       case "last_winner": {
-        const stats = this._getHeadToHeadStats(player1, player2);
-        return stats.lastWinnerIndicator > 0 ? 1 : 0;
+        const stats = this._getHeadToHead(player1, player2);
+        if (!stats.lastWinner) return 0;
+        return stats.lastWinner === player1 ? 1 : 0;
+      }
+      case "last_winner_indicator": {
+        const stats = this._getHeadToHead(player1, player2);
+        if (!stats.lastWinner) return 0;
+        if (stats.lastWinner === player1) return 1;
+        if (stats.lastWinner === player2) return -1;
+        return 0;
       }
       case "year":
         return ctx.year ?? this.latestYear ?? new Date().getFullYear();
       default:
-        return 0;
+        return NaN;
     }
-  }
-
-  _metricValue(entry, metric, surface = null) {
-    if (surface && entry.surfaceRecent.has(surface)) {
-      const surfaceEntry = entry.surfaceRecent.get(surface);
-      if (surfaceEntry && surfaceEntry.latest && Number.isFinite(surfaceEntry.latest[metric])) {
-        return surfaceEntry.latest[metric];
-      }
-    }
-    if (entry.latest && Number.isFinite(entry.latest[metric])) return entry.latest[metric];
-    if (surface) {
-      const fallback = entry.surfaceRecent.get("Unknown");
-      if (fallback && fallback.latest && Number.isFinite(fallback.latest[metric])) {
-        return fallback.latest[metric];
-      }
-    }
-    return NaN;
-  }
-
-  _surfaceWinrateAdvantage(entry1, entry2, surface) {
-    const rate1 = this._surfaceWinrate(entry1, surface);
-    const rate2 = this._surfaceWinrate(entry2, surface);
-    if (!Number.isFinite(rate1) || !Number.isFinite(rate2)) return NaN;
-    return rate1 - rate2;
   }
 
   _surfaceWinrate(entry, surface) {
-    const stats = entry.surfaceStats.get(surface) || entry.surfaceStats.get("Unknown");
-    if (stats && stats.matches > 0) {
-      return stats.wins / stats.matches;
+    if (!entry) return NaN;
+    if (surface && entry.surfaceStats.has(surface)) {
+      const stats = entry.surfaceStats.get(surface);
+      if (stats.matches > 0) return stats.wins / stats.matches;
     }
-    const totalWins = Array.from(entry.surfaceStats.values()).reduce((acc, s) => acc + s.wins, 0);
-    const totalMatches = Array.from(entry.surfaceStats.values()).reduce((acc, s) => acc + s.matches, 0);
-    if (totalMatches > 0) return totalWins / totalMatches;
+    if (entry.totalMatches > 0) {
+      return entry.totalWins / entry.totalMatches;
+    }
     return NaN;
   }
 
-  _getHeadToHeadStats(player1, player2) {
-    const key = this._pairKey(player1, player2);
-    return this.h2h.get(key) || { advantage: 0, lastWinnerIndicator: 0 };
+  _getHeadToHead(player1, player2) {
+    const key = `${player1}|||${player2}`;
+    return this.h2h.get(key) || { advantage: 0, lastWinner: "" };
   }
 
   _defaultSurface() {
@@ -571,12 +418,11 @@ export class DataLoader {
   _resolvePlayer(name) {
     if (!name) return null;
     const trimmed = name.trim();
-    const exact = this.playerMeta.has(trimmed) ? trimmed : null;
-    if (exact) return exact;
+    if (!trimmed) return null;
+    if (this.playerMeta.has(trimmed)) return trimmed;
     const lower = trimmed.toLowerCase();
     if (this.playerLookup.has(lower)) return this.playerLookup.get(lower);
-    // try partial match
-    for (const candidate of this.playerMeta.keys()) {
+    for (const candidate of this.players) {
       if (candidate.toLowerCase().includes(lower)) {
         return candidate;
       }
@@ -586,12 +432,8 @@ export class DataLoader {
 
   _stringValue(row, candidates) {
     for (const key of candidates) {
-      if (key in row && row[key] !== undefined && row[key] !== null) {
-        const val = row[key].toString().trim();
-        if (val.length > 0) return val;
-      }
-      const alias = this.headerAliases.get(key.toLowerCase());
-      if (alias && alias in row && row[alias] != null) {
+      const alias = this.headerAliases.get(key.toLowerCase()) || key;
+      if (alias in row && row[alias] != null) {
         const val = row[alias].toString().trim();
         if (val.length > 0) return val;
       }
@@ -608,6 +450,19 @@ export class DataLoader {
       }
     }
     return NaN;
+  }
+
+  _canonical(name) {
+    return (name || "").toString().trim();
+  }
+
+  _finite(value) {
+    return Number.isFinite(value) ? value : NaN;
+  }
+
+  _diff(a, b) {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return NaN;
+    return a - b;
   }
 
   _detectDelimiter(text) {
