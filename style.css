@@ -59,7 +59,9 @@ header h1 {
 button,
 input[type="file"],
 select,
-input[type="number"] {
+input[type="number"],
+input[type="search"],
+input[type="text"] {
   background: #0f1530;
   color: var(--fg);
   border: 1px solid #2a3862;
@@ -124,6 +126,12 @@ label {
   margin-top: 10px;
   font-weight: 600;
   font-size: 16px;
+}
+
+.form-hint {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-top: 4px;
 }
 
 .small {
