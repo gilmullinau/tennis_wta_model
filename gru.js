@@ -11,21 +11,24 @@ export class ModelMLP {
   build() {
     const model = tf.sequential();
     model.add(tf.layers.dense({
-      units: 64,
+      units: 32,
+
       activation: "relu",
       inputShape: [this.inputDim],
       kernelInitializer: "heNormal",
       kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 })
     }));
     model.add(tf.layers.batchNormalization());
-    model.add(tf.layers.dropout({ rate: 0.2 }));
+
+    model.add(tf.layers.dropout({ rate: 0.1 }));
     model.add(tf.layers.dense({
-      units: 32,
+      units: 16,
       activation: "relu",
       kernelInitializer: "heNormal",
       kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 })
     }));
-    model.add(tf.layers.dropout({ rate: 0.2 }));
+
+    model.add(tf.layers.dropout({ rate: 0.1 }));
     model.add(tf.layers.dense({ units: 1, activation: "sigmoid" }));
     model.compile({
       optimizer: tf.train.adam(0.001),
@@ -35,16 +38,30 @@ export class ModelMLP {
     this.model = model;
   }
 
-  async train(X_train, y_train, { epochs = 20, batchSize = 256, validationSplit = 0.2, onEpochEnd = null } = {}) {
+  async train(
+    X_train,
+    y_train,
+    { epochs = 16, batchSize = 256, validationSplit = 0.2, onEpochEnd = null, patience = 3 } = {}
+  ) {
     if (!this.model) throw new Error("Model not built. Call build() first.");
-    const cb = {
+    const earlyStop = tf.callbacks.earlyStopping({
+      monitor: "val_loss",
+      patience,
+      minDelta: 1e-4,
+      restoreBestWeights: true,
+    });
+    const historyCallback = new tf.CustomCallback({
       onEpochEnd: async (epoch, logs) => {
         if (onEpochEnd) onEpochEnd(epoch, logs);
         await tf.nextFrame();
-      }
-    };
+      },
+    });
     return await this.model.fit(X_train, y_train, {
-      epochs, batchSize, validationSplit, callbacks: cb, shuffle: true,
+      epochs,
+      batchSize,
+      validationSplit,
+      callbacks: [historyCallback, earlyStop],
+      shuffle: true,
     });
   }
 

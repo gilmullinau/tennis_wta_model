@@ -155,10 +155,11 @@ async function trainModel() {
   log("Training started...");
   const losses = [], valAcc = [];
 
-  await model.train(dataset.X_train, dataset.y_train, {
-    epochs: 20,
+  const history = await model.train(dataset.X_train, dataset.y_train, {
+    epochs: 16,
     batchSize: 256,
     validationSplit: 0.2,
+    patience: 3,
     onEpochEnd: (epoch, logs) => {
       const val = logs.val_acc ?? logs.val_accuracy ?? 0;
       log(`Epoch ${epoch + 1}: loss=${Number(logs.loss).toFixed(4)} val_acc=${Number(val).toFixed(4)}`);
@@ -168,7 +169,8 @@ async function trainModel() {
     }
   });
 
-  log("Training complete.");
+  const epochsRan = history?.epoch?.length ?? losses.length;
+  log(`Training complete after ${epochsRan} epoch(s).`);
   els.saveBtn.disabled = false;
   els.evalBtn.disabled = false;
   showPredictPanel(true);
