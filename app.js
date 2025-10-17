@@ -43,6 +43,29 @@ function showPredictPanel(show) {
   els.predictPanel.style.display = show ? "block" : "none";
 }
 
+async function initTensorFlowBackend() {
+  const backendPriority = ["webgl", "wasm", "cpu"];
+  const wasmBase = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.20.0/dist/";
+
+  if (tf.wasm?.setWasmPaths) {
+    tf.wasm.setWasmPaths(wasmBase);
+  }
+
+  for (const backend of backendPriority) {
+    try {
+      const ok = await tf.setBackend(backend);
+      if (!ok) continue;
+      await tf.ready();
+      if (tf.getBackend() === backend) return backend;
+    } catch (err) {
+      console.warn(`Failed to set TensorFlow backend to ${backend}:`, err);
+    }
+  }
+
+  await tf.ready();
+  return tf.getBackend();
+}
+
 async function parseAndInit(text) {
   try {
     loader = new DataLoader();
@@ -275,9 +298,14 @@ els.loadModelBtn.addEventListener("click", async () => {
 });
 els.predictBtn.addEventListener("click", handlePredict);
 
-// Init
-console.log("🚀 App initialized — calling autoLoadCSV()");
-enableTraining(false);
-showPredictPanel(false);
-autoLoadCSV();
-console.log("✅ autoLoadCSV() call placed after init");
+async function bootstrap() {
+  console.log("🚀 App initialized — preparing TensorFlow backend");
+  enableTraining(false);
+  showPredictPanel(false);
+  const backend = await initTensorFlowBackend();
+  log(`TensorFlow backend in use: ${backend}`);
+  console.log(`✅ TensorFlow backend set to: ${backend}`);
+  await autoLoadCSV();
+}
+
+bootstrap();
