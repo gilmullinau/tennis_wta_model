@@ -1,6 +1,7 @@
 // app.js
-// Loads CSV automatically or via manual upload, trains, evaluates, and visualizes results.
+// Loads TensorFlow.js, the data, trains MLP model, evaluates, and visualizes results.
 
+import "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js";
 import { DataLoader } from "./data-loader.js";
 import { ModelMLP } from "./gru.js";
 
