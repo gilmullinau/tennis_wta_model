@@ -5,11 +5,13 @@ export class ModelMLP {
   constructor(inputDim) {
     this.inputDim = inputDim;
     this.model = null;
-    this.modelKey = "wta-mlp-lite-v2";
+
+    this.modelKey = "wta-mlp-lite-v1";
   }
 
   build() {
     const model = tf.sequential();
+
     model.add(
       tf.layers.dense({
         units: 1,
@@ -29,13 +31,13 @@ export class ModelMLP {
   async train(
     X_train,
     y_train,
-    {
-      epochs = 5,
-      batchSize = 1024,
-      validationSplit = 0.15,
-      onEpochEnd = null,
-      patience = 1,
-    } = {}
+
+       epochs = 8,
+  batchSize = 512,
+  validationSplit = 0.2,
+  onEpochEnd = null,
+  patience = 1
+   
   ) {
     if (!this.model) throw new Error("Model not built. Call build() first.");
     const earlyStop = tf.callbacks.earlyStopping({
@@ -61,7 +63,9 @@ export class ModelMLP {
 
   async evaluate(X_test, y_test) {
     if (!this.model) throw new Error("Model not built or loaded.");
-    const evalOut = await this.model.evaluate(X_test, y_test, { batchSize: 1024 });
+
+    const evalOut = await this.model.evaluate(X_test, y_test, { batchSize: 512 });
+
     const loss = (await evalOut[0].data())[0];
     const acc = (await evalOut[1].data())[0];
     return { loss, acc };
