@@ -11,6 +11,7 @@ let model = null;
 let dataset = null;
 let lossChart = null;
 let cmChart = null;
+let metadata = null;
 
 const els = {
   trainBtn: document.getElementById("trainBtn"),
@@ -46,7 +47,9 @@ async function parseAndInit(text) {
   try {
     loader = new DataLoader();
     dataset = await loader.loadCSVText(text);
-    els.info.textContent = `Dataset loaded — Train: ${dataset.X_train.shape[0]}, Test: ${dataset.X_test.shape[0]}, Features: ${dataset.featureNames.length}`;
+    metadata = dataset.metadata || {};
+    const playerCount = metadata.players ? metadata.players.length : loader.players.length;
+    els.info.textContent = `Dataset loaded — Train: ${dataset.X_train.shape[0]}, Test: ${dataset.X_test.shape[0]}, Features: ${dataset.featureNames.length}, Players indexed: ${playerCount}`;
     log("Dataset loaded successfully.");
     enableTraining(true);
     buildPredictForm();
@@ -85,21 +88,64 @@ function buildPredictForm() {
   const form = els.predictForm;
   form.innerHTML = "";
 
-  loader.numericCols.forEach((c) => {
+  const players = loader.players || (metadata && metadata.players ? metadata.players : []);
+  if (!players.length) {
+    const warn = document.createElement("div");
+    warn.textContent = "Player directory could not be built from dataset.";
+    form.appendChild(warn);
+    return;
+  }
+
+  const datalist = document.createElement("datalist");
+  datalist.id = "playerOptions";
+  datalist.innerHTML = players.map((p) => `<option value="${p}"></option>`).join("");
+  form.appendChild(datalist);
+
+  const playerRow = (label, name) => {
     const div = document.createElement("div");
     div.className = "form-row";
-    div.innerHTML = `<label>${c}</label><input type="number" step="any" name="${c}" required />`;
-    form.appendChild(div);
-  });
+    div.innerHTML = `<label>${label}</label><input type="search" name="${name}" list="playerOptions" placeholder="Start typing a player" autocomplete="off" required />`;
+    return div;
+  };
 
-  loader.categoricalCols.forEach((col) => {
-    const levels = loader.catLevels[col] || [];
+  form.appendChild(playerRow("Player 1", "player1"));
+  form.appendChild(playerRow("Player 2", "player2"));
+
+  if (loader.categoricalCols.includes("Surface")) {
+    const levels = loader.catLevels.Surface || (metadata && metadata.surfaces ? metadata.surfaces : []);
     const div = document.createElement("div");
     div.className = "form-row";
     const opts = levels.map((l) => `<option value="${l}">${l}</option>`).join("");
-    div.innerHTML = `<label>${col}</label><select name="${col}">${opts}</select>`;
+    div.innerHTML = `<label>Surface</label><select name="Surface">${opts}</select>`;
     form.appendChild(div);
-  });
+  }
+
+  if (loader.categoricalCols.includes("Court")) {
+    const levels = loader.catLevels.Court || (metadata && metadata.courts ? metadata.courts : []);
+    if (levels.length) {
+      const div = document.createElement("div");
+      div.className = "form-row";
+      const opts = levels.map((l) => `<option value="${l}">${l}</option>`).join("");
+      div.innerHTML = `<label>Court</label><select name="Court">${opts}</select>`;
+      form.appendChild(div);
+    }
+  }
+
+  if (loader.categoricalCols.includes("Round")) {
+    const levels = loader.catLevels.Round || (metadata && metadata.rounds ? metadata.rounds : []);
+    if (levels.length) {
+      const div = document.createElement("div");
+      div.className = "form-row";
+      const opts = levels.map((l) => `<option value="${l}">${l}</option>`).join("");
+      div.innerHTML = `<label>Round</label><select name="Round">${opts}</select>`;
+      form.appendChild(div);
+    }
+  }
+
+  const hint = document.createElement("div");
+  hint.className = "form-hint";
+  hint.textContent = "Players are matched case-insensitively; choose surface/context and hit predict.";
+  form.appendChild(hint);
 }
 
 async function trainModel() {
@@ -109,10 +155,11 @@ async function trainModel() {
   log("Training started...");
   const losses = [], valAcc = [];
 
-  await model.train(dataset.X_train, dataset.y_train, {
-    epochs: 20,
+  const history = await model.train(dataset.X_train, dataset.y_train, {
+    epochs: 16,
     batchSize: 256,
     validationSplit: 0.2,
+    patience: 3,
     onEpochEnd: (epoch, logs) => {
       const val = logs.val_acc ?? logs.val_accuracy ?? 0;
       log(`Epoch ${epoch + 1}: loss=${Number(logs.loss).toFixed(4)} val_acc=${Number(val).toFixed(4)}`);
@@ -122,7 +169,8 @@ async function trainModel() {
     }
   });
 
-  log("Training complete.");
+  const epochsRan = history?.epoch?.length ?? losses.length;
+  log(`Training complete after ${epochsRan} epoch(s).`);
   els.saveBtn.disabled = false;
   els.evalBtn.disabled = false;
   showPredictPanel(true);
@@ -178,14 +226,33 @@ async function handlePredict(e) {
   e.preventDefault();
   if (!model || !loader) return alert("Train or load a model first.");
   const formData = new FormData(els.predictForm);
-  const userInput = {};
-  for (const [k, v] of formData.entries()) userInput[k] = v;
-  const vec = loader.vectorizeForPredict(userInput);
+  const player1 = (formData.get("player1") || "").toString();
+  const player2 = (formData.get("player2") || "").toString();
+  const surface = formData.get("Surface") || null;
+  const court = formData.get("Court") || null;
+  const round = formData.get("Round") || null;
+  let prepared;
+  try {
+    prepared = loader.vectorizeFromPlayers({ player1, player2, surface, court, round });
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+
+  const vec = prepared.vector;
   const x = tf.tensor2d([Array.from(vec)], [1, vec.length], "float32");
   const yProb = model.predictProba(x);
   const prob = (await yProb.data())[0];
   const pred = prob >= 0.5 ? 1 : 0;
-  els.predictOut.textContent = `Predicted: ${pred === 1 ? "Player 1 wins" : "Player 1 loses"} (p=${prob.toFixed(3)})`;
+  const p1Name = prepared.players?.player1 ?? player1;
+  const p2Name = prepared.players?.player2 ?? player2;
+  const winnerText = pred === 1 ? `${p1Name} wins` : `${p1Name} loses`;
+  let message = `Prediction for ${p1Name} vs ${p2Name}: ${winnerText} (p=${prob.toFixed(3)})`;
+  if (prepared.missingFeatures?.length) {
+    log(`Prediction fallback — missing engineered features: ${prepared.missingFeatures.join(", ")}`);
+    message += `\nNote: used default values for ${prepared.missingFeatures.join(", ")}.`;
+  }
+  els.predictOut.textContent = message;
   x.dispose(); yProb.dispose();
 }
 
