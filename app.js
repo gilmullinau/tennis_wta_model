@@ -179,10 +179,10 @@ async function trainModel() {
   const losses = [], valAcc = [];
 
   const history = await model.train(dataset.X_train, dataset.y_train, {
-    epochs: 16,
-    batchSize: 256,
+    epochs: 8,
+    batchSize: 512,
     validationSplit: 0.2,
-    patience: 3,
+    patience: 2,
     onEpochEnd: (epoch, logs) => {
       const val = logs.val_acc ?? logs.val_accuracy ?? 0;
       log(`Epoch ${epoch + 1}: loss=${Number(logs.loss).toFixed(4)} val_acc=${Number(val).toFixed(4)}`);
