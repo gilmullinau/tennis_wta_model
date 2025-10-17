@@ -5,15 +5,23 @@ const tf = window.tf;
 
 export class DataLoader {
   constructor() {
-    this.numericCols = [
+    this.numericCandidates = [
       "rank_diff", "pts_diff", "odd_diff",
-      "h2h_advantage", "last_winner", "surface_winrate_adv", "year"
+      "elo_diff", "surface_elo_diff",
+      "form_diff", "surface_form_diff",
+      "games_margin_diff", "sets_margin_diff",
+      "rest_days_diff", "tiebreak_rate_diff",
+      "rank_trend_diff", "points_trend_diff",
+      "h2h_advantage", "last_winner_indicator", "last_winner",
+      "surface_winrate_adv", "year"
     ];
-    this.categoricalCols = ["Surface", "Court", "Round"];
+    this.categoricalCandidates = ["Surface", "Court", "Round"];
     this.dropCols = [
       "Tournament", "Date", "Best of", "Player_1", "Player_2", "Winner", "Score",
-      "Rank_1","Rank_2","Pts_1","Pts_2","Odd_1","Odd_2"
+      "Rank_1","Rank_2","Pts_1","Pts_2","Odd_1","Odd_2", "match_id"
     ];
+    this.numericCols = [];
+    this.categoricalCols = [];
     this.labelCol = "y";
     this.catLevels = {};
     this.scaler = { mean: {}, std: {} };
@@ -26,6 +34,14 @@ export class DataLoader {
     if (rows.length === 0) throw new Error("Empty CSV file.");
     const headers = rows[0].map(h => (h ?? "").trim());
     const dataRows = rows.slice(1);
+
+    const headerSet = new Set(headers);
+    this.numericCols = this.numericCandidates.filter((c) => headerSet.has(c));
+    this.categoricalCols = this.categoricalCandidates.filter((c) => headerSet.has(c));
+
+    if (this.numericCols.length === 0) {
+      throw new Error("No numeric feature columns found in CSV.");
+    }
 
     const raw = dataRows.map((r) => {
       const obj = {};
