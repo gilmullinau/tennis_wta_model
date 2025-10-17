@@ -36,6 +36,7 @@ export class DataLoader {
       "rank_1", "rank_2", "pts_1", "pts_2", "odd_1", "odd_2"
     ];
 
+
     this.numericCols = [];
     this.categoricalCols = [];
     this.labelCol = "y";
@@ -69,6 +70,7 @@ export class DataLoader {
     const headerSet = new Set(headers);
     this.numericCols = this.numericCandidates.filter((c) => headerSet.has(c));
     this.categoricalCols = this.categoricalCandidates.filter((c) => headerSet.has(c));
+
     if (this.numericCols.length === 0) {
       throw new Error("No numeric feature columns found in CSV.");
     }

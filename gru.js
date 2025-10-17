@@ -12,12 +12,14 @@ export class ModelMLP {
     const model = tf.sequential();
     model.add(tf.layers.dense({
       units: 32,
+
       activation: "relu",
       inputShape: [this.inputDim],
       kernelInitializer: "heNormal",
       kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 })
     }));
     model.add(tf.layers.batchNormalization());
+
     model.add(tf.layers.dropout({ rate: 0.1 }));
     model.add(tf.layers.dense({
       units: 16,
@@ -25,6 +27,7 @@ export class ModelMLP {
       kernelInitializer: "heNormal",
       kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 })
     }));
+
     model.add(tf.layers.dropout({ rate: 0.1 }));
     model.add(tf.layers.dense({ units: 1, activation: "sigmoid" }));
     model.compile({
