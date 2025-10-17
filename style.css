@@ -1,0 +1,152 @@
+/* style.css */
+/* Global dark theme consistent with index.html inline vars */
+:root {
+  --bg: #0b1020;
+  --fg: #e9eef8;
+  --card: #131a33;
+  --accent: #6aa8ff;
+  --border: #24304f;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+}
+
+header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: #0d1428;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+button,
+input[type="file"],
+select,
+input[type="number"] {
+  background: #0f1530;
+  color: var(--fg);
+  border: 1px solid #2a3862;
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: all 0.2s ease;
+  font-size: 14px;
+}
+
+button:hover:not(:disabled),
+select:hover,
+input[type="file"]:hover {
+  background: #1b244a;
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 320px;
+}
+
+canvas {
+  background: #0b0f1f;
+  border-radius: 12px;
+  padding: 8px;
+}
+
+pre {
+  background: #0b0f1f;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 13px;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+label {
+  min-width: 160px;
+  font-size: 14px;
+}
+
+#predictPanel {
+  display: none;
+}
+
+#predictOut {
+  margin-top: 10px;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.small {
+  opacity: 0.8;
+  font-size: 12px;
+}
+
+.footer {
+  text-align: center;
+  opacity: 0.6;
+  font-size: 12px;
+  padding: 20px 0 30px;
+}
+
+.metrics {
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .charts {
+    grid-template-columns: 1fr;
+  }
+  label {
+    min-width: 120px;
+  }
+}
