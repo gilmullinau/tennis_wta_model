@@ -1,5 +1,5 @@
 // gru.js (MLP model implementation)
-import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.esm.min.js";
+const tf = window.tf;
 
 export class ModelMLP {
   constructor(inputDim) {

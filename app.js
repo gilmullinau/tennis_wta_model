@@ -1,9 +1,10 @@
-// app.js
-// Loads TensorFlow.js, the data, trains MLP model, evaluates, and visualizes results.
+// app.js — WTA Match Outcome predictor
+// Loads TensorFlow.js (global tf), dataset from wta_data.csv, trains GRU model, visualizes metrics.
 
-import "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js";
 import { DataLoader } from "./data-loader.js";
 import { ModelMLP } from "./gru.js";
+
+const tf = window.tf; // Use global TensorFlow.js loaded via <script>
 
 let loader = null;
 let model = null;
@@ -24,7 +25,6 @@ const els = {
   predictForm: document.getElementById("predictForm"),
   predictBtn: document.getElementById("predictBtn"),
   predictOut: document.getElementById("predictOut"),
-  csvInput: document.getElementById("csvInput"),
 };
 
 function log(msg) {
@@ -61,16 +61,24 @@ async function parseAndInit(text) {
 async function autoLoadCSV() {
   const url = `./wta_data.csv?v=${Date.now()}`;
   try {
+    console.log("🔍 Fetching CSV from:", url);
     const res = await fetch(url, { cache: "no-store" });
+    console.log("✅ HTTP status:", res.status);
+
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
+    console.log("📄 CSV length:", text.length);
+    console.log("📄 First 200 chars:", text.slice(0, 200));
+
     if (!text || text.trim().length === 0) throw new Error("CSV is empty");
     await parseAndInit(text);
   } catch (err) {
-    log(`Auto-load failed: ${err.message}. You can choose a CSV file manually.`);
-    els.info.textContent = "Auto-load failed. Please choose wta_data.csv with the file picker.";
+    console.error("❌ Auto-load failed:", err);
+    log(`Auto-load failed: ${err.message}`);
+    els.info.textContent = "Failed to auto-load wta_data.csv from root.";
   }
 }
+
 
 function buildPredictForm() {
   if (!loader || !dataset) return;
@@ -113,6 +121,7 @@ async function trainModel() {
       drawLossChart(losses, valAcc);
     }
   });
+
   log("Training complete.");
   els.saveBtn.disabled = false;
   els.evalBtn.disabled = false;
@@ -198,14 +207,10 @@ els.loadModelBtn.addEventListener("click", async () => {
   }
 });
 els.predictBtn.addEventListener("click", handlePredict);
-els.csvInput.addEventListener("change", async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const text = await file.text();
-  await parseAndInit(text);
-});
 
 // Init
+console.log("🚀 App initialized — calling autoLoadCSV()");
 enableTraining(false);
 showPredictPanel(false);
 autoLoadCSV();
+console.log("✅ autoLoadCSV() call placed after init");

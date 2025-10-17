@@ -8,7 +8,10 @@
   <!-- Chart.js for visualizations -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 
-  <!-- Styles (keep your own style.css) -->
+  <!-- TensorFlow.js global -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+
+  <!-- Styles -->
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
@@ -25,7 +28,6 @@
           <button id="saveBtn" disabled>Save Model</button>
           <button id="loadModelBtn">Load Saved</button>
         </div>
-        <input id="csvInput" type="file" accept=".csv" />
       </div>
       <div class="metrics" id="info" style="margin-top:8px;">Loading dataset...</div>
     </div>
@@ -53,12 +55,11 @@
     </div>
 
     <div class="footer">
-      Data: <b>wta_data.csv</b> — Auto-loaded from repository root or choose a file manually.
+      Data auto-loaded from <b>wta_data.csv</b> in project root.
     </div>
   </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
-
+  <!-- Main app -->
   <script type="module" src="./app.js"></script>
 </body>
 </html>
