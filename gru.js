@@ -10,12 +10,25 @@ export class ModelMLP {
 
   build() {
     const model = tf.sequential();
-    model.add(tf.layers.dense({ units: 128, activation: "relu", inputShape: [this.inputDim] }));
-    model.add(tf.layers.dropout({ rate: 0.3 }));
-    model.add(tf.layers.dense({ units: 64, activation: "relu" }));
+    model.add(tf.layers.dense({
+      units: 64,
+      activation: "relu",
+      inputShape: [this.inputDim],
+      kernelInitializer: "heNormal",
+      kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 })
+    }));
+    model.add(tf.layers.batchNormalization());
+    model.add(tf.layers.dropout({ rate: 0.2 }));
+    model.add(tf.layers.dense({
+      units: 32,
+      activation: "relu",
+      kernelInitializer: "heNormal",
+      kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 })
+    }));
+    model.add(tf.layers.dropout({ rate: 0.2 }));
     model.add(tf.layers.dense({ units: 1, activation: "sigmoid" }));
     model.compile({
-      optimizer: tf.train.adam(),
+      optimizer: tf.train.adam(0.001),
       loss: "binaryCrossentropy",
       metrics: ["accuracy"],
     });
