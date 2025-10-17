@@ -5,33 +5,21 @@ export class ModelMLP {
   constructor(inputDim) {
     this.inputDim = inputDim;
     this.model = null;
-    this.modelKey = "wta-mlp-v1";
+    this.modelKey = "wta-mlp-lite-v2";
   }
 
   build() {
     const model = tf.sequential();
-    model.add(tf.layers.dense({
-      units: 32,
-
-      activation: "relu",
-      inputShape: [this.inputDim],
-      kernelInitializer: "heNormal",
-      kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 })
-    }));
-    model.add(tf.layers.batchNormalization());
-
-    model.add(tf.layers.dropout({ rate: 0.1 }));
-    model.add(tf.layers.dense({
-      units: 16,
-      activation: "relu",
-      kernelInitializer: "heNormal",
-      kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 })
-    }));
-
-    model.add(tf.layers.dropout({ rate: 0.1 }));
-    model.add(tf.layers.dense({ units: 1, activation: "sigmoid" }));
+    model.add(
+      tf.layers.dense({
+        units: 1,
+        activation: "sigmoid",
+        inputShape: [this.inputDim],
+        kernelInitializer: "glorotUniform",
+      })
+    );
     model.compile({
-      optimizer: tf.train.adam(0.001),
+      optimizer: tf.train.adam(0.01),
       loss: "binaryCrossentropy",
       metrics: ["accuracy"],
     });
@@ -41,7 +29,13 @@ export class ModelMLP {
   async train(
     X_train,
     y_train,
-    { epochs = 16, batchSize = 256, validationSplit = 0.2, onEpochEnd = null, patience = 3 } = {}
+    {
+      epochs = 5,
+      batchSize = 1024,
+      validationSplit = 0.15,
+      onEpochEnd = null,
+      patience = 1,
+    } = {}
   ) {
     if (!this.model) throw new Error("Model not built. Call build() first.");
     const earlyStop = tf.callbacks.earlyStopping({
@@ -67,7 +61,7 @@ export class ModelMLP {
 
   async evaluate(X_test, y_test) {
     if (!this.model) throw new Error("Model not built or loaded.");
-    const evalOut = await this.model.evaluate(X_test, y_test, { batchSize: 256 });
+    const evalOut = await this.model.evaluate(X_test, y_test, { batchSize: 1024 });
     const loss = (await evalOut[0].data())[0];
     const acc = (await evalOut[1].data())[0];
     return { loss, acc };

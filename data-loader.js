@@ -53,6 +53,10 @@ export class DataLoader {
 
     this.headerAliases = new Map();
     this.catalog = null;
+
+    this.recentYearWindow = 4;
+    this.maxRows = 6000;
+    this.rowStats = { total: 0, filtered: 0, trimmed: 0 };
   }
 
   async loadCSVText(csvText) {
@@ -119,9 +123,17 @@ export class DataLoader {
       throw new Error(`Too few valid rows: ${filtered.length}`);
     }
 
+    const recent = this._limitRecentRows(filtered);
+    const working = this._downsampleRows(recent);
+    this.rowStats = {
+      total: raw.length,
+      filtered: filtered.length,
+      trimmed: working.length,
+    };
+
     // Prepare categorical encoders
-    this._fitCategoricals(filtered);
-    const { X, y, featureNames } = this._buildDesignMatrix(filtered);
+    this._fitCategoricals(working);
+    const { X, y, featureNames } = this._buildDesignMatrix(working);
     this.featureNames = featureNames;
 
     // Fit/transform scaler
@@ -152,7 +164,51 @@ export class DataLoader {
         surfaces: this.surfaces,
         rounds: this.rounds,
         courts: this.courts,
+        rowStats: this.rowStats,
       },
+    };
+  }
+
+  _limitRecentRows(rows) {
+    if (!this.recentYearWindow || this.recentYearWindow <= 1) return rows;
+    if (!this.numericCols.includes("year")) return rows;
+    const years = rows
+      .map((row) => this._toNumber(row.year))
+      .filter((y) => Number.isFinite(y));
+    if (!years.length) return rows;
+    const maxYear = Math.max(...years);
+    const minYear = maxYear - (this.recentYearWindow - 1);
+    const limited = rows.filter((row) => {
+      const yr = this._toNumber(row.year);
+      return Number.isFinite(yr) && yr >= minYear;
+    });
+    const minimumKeep = Math.max(200, Math.floor(rows.length * 0.4));
+    return limited.length >= minimumKeep ? limited : rows;
+  }
+
+  _downsampleRows(rows) {
+    if (!this.maxRows || rows.length <= this.maxRows) return rows;
+    const copy = rows.slice();
+    this._shuffleInPlace(copy, this._mulberry32(1337));
+    return copy.slice(0, this.maxRows);
+  }
+
+  _shuffleInPlace(arr, rng) {
+    if (!arr || arr.length <= 1) return;
+    const rand = typeof rng === "function" ? rng : Math.random;
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+
+  _mulberry32(seed) {
+    let t = seed >>> 0;
+    return function () {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
     };
   }
 
