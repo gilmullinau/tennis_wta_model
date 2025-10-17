@@ -1,36 +1,41 @@
 // data-loader.js
-// Reads local CSV (as text), preprocesses: drop leakage columns, numeric scaling, one-hot for categoricals,
-// split train/test, returns tf.Tensors for model training.
+// Reads CSV text, preprocesses: drop leakage columns, numeric scaling, one-hot for categoricals,
+// stratified split train/test, returns tf.Tensors and feature metadata.
 
 import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js";
 
 export class DataLoader {
   constructor() {
+    // Numeric feature columns expected in CSV (keep order stable)
     this.numericCols = [
       "rank_diff", "pts_diff", "odd_diff",
       "h2h_advantage", "last_winner", "surface_winrate_adv", "year"
     ];
+    // Categorical features for one-hot
     this.categoricalCols = ["Surface", "Court", "Round"];
+    // Columns to drop to avoid leakage / IDs
     this.dropCols = [
-      "Tournament", "Date", "Best of", "Player_1", "Player_2", "Winner", "Score"
+      "Tournament", "Date", "Best of", "Player_1", "Player_2", "Winner", "Score",
+      // we keep Rank_*, Pts_*, Odd_* only if already transformed into diffs above
+      "Rank_1","Rank_2","Pts_1","Pts_2","Odd_1","Odd_2"
     ];
     this.labelCol = "y";
+    // Fitted metadata
     this.catLevels = {};
     this.scaler = { mean: {}, std: {} };
     this.featureNames = [];
   }
 
-  // NEW: direct text-based loading (no FileReader)
   async loadCSVText(csvText) {
     const delimiter = this._detectDelimiter(csvText);
     const rows = this._parseCSV(csvText, delimiter);
     if (rows.length === 0) throw new Error("Empty CSV file.");
-    const headers = rows[0];
+    const headers = rows[0].map(h => (h ?? "").trim());
     const dataRows = rows.slice(1);
 
     const raw = dataRows.map((r) => {
       const obj = {};
-      headers.forEach((h, i) => (obj[h.trim()] = r[i] === undefined ? "" : r[i]));
+      headers.forEach((h, i) => (obj[h] = r[i] === undefined ? "" : r[i]));
       return obj;
     });
 
@@ -38,61 +43,73 @@ export class DataLoader {
       throw new Error(`Label column "${this.labelCol}" not found in CSV.`);
     }
 
-    // drop leakage columns & cast numerics
+    // Drop leakage columns; cast types
     for (const row of raw) {
-      this.dropCols.forEach((c) => delete row[c]);
+      // drop known leakage/ID cols if exist
+      for (const c of this.dropCols) if (c in row) delete row[c];
+      // y to number (0/1)
       row[this.labelCol] = this._toNumber(row[this.labelCol]);
+      // numeric feature casting
       for (const c of this.numericCols) {
         if (row[c] === undefined) continue;
         row[c] = this._toNumber(row[c]);
       }
+      // leave categoricals as string
     }
 
-    // remove rows with NaNs
+    // Filter invalid rows
     const filtered = raw.filter((row) => {
-      if (row[this.labelCol] === null || isNaN(row[this.labelCol])) return false;
+      if (!Number.isFinite(row[this.labelCol])) return false;
       for (const c of this.numericCols) {
-        if (row[c] === undefined || row[c] === null || isNaN(row[c])) return false;
+        if (!Number.isFinite(row[c])) return false;
       }
       return true;
     });
+    if (filtered.length < 10) {
+      throw new Error(`Too few valid rows after filtering: ${filtered.length}`);
+    }
 
-    // fit categorical levels and build design matrix
+    // Fit categorical levels and build design matrix
     this._fitCategoricals(filtered);
     const { X, y, featureNames } = this._buildDesignMatrix(filtered);
     this.featureNames = featureNames;
 
-    // normalize numeric columns
+    // Normalize numeric columns (z-score)
     this._fitScaler(X, featureNames);
     const Xscaled = this._transformWithScaler(X, featureNames);
 
-    // split train/test
+    // Stratified split
     const { X_train, y_train, X_test, y_test } = this._trainTestSplitStratified(Xscaled, y, 0.2, 42);
 
-    const xTrainTensor = tf.tensor2d(X_train);
-    const yTrainTensor = tf.tensor2d(y_train.map((v) => [v]));
-    const xTestTensor = tf.tensor2d(X_test);
-    const yTestTensor = tf.tensor2d(y_test.map((v) => [v]));
+    // To tensors
+    const xTrainTensor = tf.tensor2d(X_train, [X_train.length, featureNames.length], "float32");
+    const yTrainTensor = tf.tensor2d(y_train.map(v => [v]), [y_train.length, 1], "float32");
+    const xTestTensor = tf.tensor2d(X_test, [X_test.length, featureNames.length], "float32");
+    const yTestTensor = tf.tensor2d(y_test.map(v => [v]), [y_test.length, 1], "float32");
 
     return {
       X_train: xTrainTensor, y_train: yTrainTensor,
       X_test: xTestTensor, y_test: yTestTensor,
       featureNames: this.featureNames,
       artifacts: {
-        catLevels: this.catLevels, scaler: this.scaler,
-        numericCols: this.numericCols, categoricalCols: this.categoricalCols
+        catLevels: this.catLevels,
+        scaler: this.scaler,
+        numericCols: this.numericCols,
+        categoricalCols: this.categoricalCols
       }
     };
   }
 
   vectorizeForPredict(userInput) {
+    // Build row object in feature space
     const rowObj = {};
+    // numeric
     for (const c of this.numericCols) {
-      rowObj[c] = this._toNumber(userInput[c]);
-      if (rowObj[c] === null || isNaN(rowObj[c])) {
-        throw new Error(`Numeric input "${c}" missing or invalid.`);
-      }
+      const v = this._toNumber(userInput[c]);
+      if (!Number.isFinite(v)) throw new Error(`Numeric input "${c}" missing or invalid.`);
+      rowObj[c] = v;
     }
+    // categoricals → one-hot across fitted levels
     for (const col of this.categoricalCols) {
       const levels = this.catLevels[col] || [];
       const provided = (userInput[col] ?? "").toString();
@@ -101,6 +118,7 @@ export class DataLoader {
         rowObj[key] = provided === lvl ? 1 : 0;
       }
     }
+    // map to feature vector order + scale numerics
     const vec = this.featureNames.map((f) => {
       let v = rowObj[f] ?? 0;
       if (this.numericCols.includes(f)) {
@@ -143,18 +161,18 @@ export class DataLoader {
   }
 
   _toNumber(v) {
-    if (v === undefined || v === null) return null;
+    if (v === undefined || v === null || v === "") return NaN;
     const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+    return Number.isFinite(n) ? n : NaN;
   }
 
   _fitCategoricals(rows) {
     for (const col of this.categoricalCols) {
       const set = new Set();
-      rows.forEach((r) => {
+      for (const r of rows) {
         const val = (r[col] ?? "").toString().trim();
         if (val.length > 0) set.add(val);
-      });
+      }
       this.catLevels[col] = Array.from(set.values()).sort();
     }
   }
