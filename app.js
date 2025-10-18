@@ -591,7 +591,7 @@ autoLoadCSV();
 console.log("✅ autoLoadCSV() call placed after init");
 
 function readHyperparameters() {
-  const epochs = clampInt(els.epochsInput.value, 1, 200, 20);
+  const epochs = clampInt(els.epochsInput.value, 1, 200, 6);
   return {
     training: {
       epochs,
