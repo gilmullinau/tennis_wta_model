@@ -71,8 +71,8 @@ header h1 {
 
 .hyper-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+  gap: 8px;
   margin-top: 16px;
 }
 
@@ -80,12 +80,12 @@ header h1 {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .hyper-grid input[type="number"] {
   width: 100%;
-  padding: 6px 8px;
+  padding: 4px 6px;
 }
 
 .hyper-grid input[disabled] {
