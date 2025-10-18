@@ -167,6 +167,24 @@ label {
   min-width: auto;
 }
 
+.match-context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 10px 0 6px;
+}
+
+.match-context-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: auto;
+}
+
+.scenario-note {
+  margin-bottom: 6px;
+}
+
 .feature-table {
   width: 100%;
   border-collapse: collapse;
@@ -218,6 +236,9 @@ label {
   }
   label {
     min-width: 120px;
+  }
+  .match-context-grid {
+    grid-template-columns: 1fr;
   }
   .file-row {
     flex-direction: column;

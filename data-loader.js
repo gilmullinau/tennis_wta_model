@@ -2,6 +2,7 @@
 // Reads CSV text, preprocesses: drop leakage columns, numeric scaling, one-hot for categoricals,
 // stratified split train/test, returns tf.Tensors and feature metadata.
 const tf = window.tf;
+const SCENARIO_YEAR = 2025;
 
 export class DataLoader {
   constructor() {
@@ -22,6 +23,8 @@ export class DataLoader {
     this.playerNames = [];
     this.matchIndex = new Map();
     this.opponentMap = new Map();
+    this.playerStats = new Map();
+    this.categoryOptions = new Map();
     this._flipOnReverse = new Set([
       "rank_diff", "pts_diff", "odd_diff", "h2h_advantage", "surface_winrate_adv"
     ]);
@@ -63,7 +66,13 @@ export class DataLoader {
       numeric: {},
       categorical: {},
       label: NaN,
-      timestamp: this._parseDate((row["Date"] ?? "").toString().trim())
+      timestamp: this._parseDate((row["Date"] ?? "").toString().trim()),
+      rank1: this._toNumber(row["Rank_1"]),
+      rank2: this._toNumber(row["Rank_2"]),
+      pts1: this._toNumber(row["Pts_1"]),
+      pts2: this._toNumber(row["Pts_2"]),
+      winner: (row["Winner"] ?? "").toString().trim(),
+      score: (row["Score"] ?? "").toString().trim()
     }));
 
     // Drop leakage columns; cast types and enrich metadata snapshot
@@ -140,6 +149,16 @@ export class DataLoader {
     if (!player) return [];
     const opponents = this.opponentMap.get(player);
     return opponents ? opponents.slice() : [];
+  }
+
+  getPlayerSnapshot(player) {
+    if (!player) return null;
+    return this.playerStats.get(player) || null;
+  }
+
+  getCategoryOptions(column) {
+    const opts = this.categoryOptions.get(column);
+    return opts ? opts.slice() : [];
   }
 
   getLatestAutoFeatures(player1, player2) {
@@ -287,6 +306,8 @@ export class DataLoader {
     }
     this.matchIndex = index;
     this.playerNames = Array.from(players.values()).sort((a, b) => a.localeCompare(b));
+    this.playerStats = this._buildPlayerStats(metaRows);
+    this.categoryOptions = this._collectCategoryOptions(metaRows);
     const sortedOpponents = new Map();
     for (const [player, set] of opponents.entries()) {
       sortedOpponents.set(
@@ -301,33 +322,69 @@ export class DataLoader {
     if (!match) return null;
     const numeric = {};
     const vectorInput = {};
-    for (const col of this.numericCols) {
-      let val = match.numeric[col];
+    const player1Snapshot = this.getPlayerSnapshot(player1);
+    const player2Snapshot = this.getPlayerSnapshot(player2);
+
+    const resolveNumeric = (key, fallback) => {
+      let val = fallback;
       if (!Number.isFinite(val)) val = 0;
       if (!alreadyForward) {
-        if (col === "last_winner") {
+        if (key === "last_winner") {
           if (val === 0 || val === 1) val = 1 - val;
-        } else if (this._flipOnReverse.has(col)) {
+        } else if (this._flipOnReverse.has(key)) {
           val = -val;
         }
       }
-      numeric[col] = val;
-      vectorInput[col] = val;
-    }
+      numeric[key] = val;
+      vectorInput[key] = val;
+    };
+
+    const rank1 = Number.isFinite(player1Snapshot?.rank)
+      ? player1Snapshot.rank
+      : (alreadyForward ? match.rank1 : match.rank2);
+    const rank2 = Number.isFinite(player2Snapshot?.rank)
+      ? player2Snapshot.rank
+      : (alreadyForward ? match.rank2 : match.rank1);
+    const rankDiff =
+      Number.isFinite(rank1) && Number.isFinite(rank2) ? rank2 - rank1 : match.numeric.rank_diff;
+    resolveNumeric("rank_diff", rankDiff);
+
+    const pts1 = alreadyForward ? match.pts1 : match.pts2;
+    const pts2 = alreadyForward ? match.pts2 : match.pts1;
+    const ptsDiff = Number.isFinite(pts1) && Number.isFinite(pts2)
+      ? pts1 - pts2
+      : match.numeric.pts_diff;
+    resolveNumeric("pts_diff", ptsDiff);
+
+    resolveNumeric("odd_diff", match.numeric.odd_diff);
+    resolveNumeric("h2h_advantage", match.numeric.h2h_advantage);
+    resolveNumeric("last_winner", match.numeric.last_winner);
+    resolveNumeric("surface_winrate_adv", match.numeric.surface_winrate_adv);
+    resolveNumeric("year", SCENARIO_YEAR);
+
+    const categorical = {};
     for (const col of this.categoricalCols) {
       const val = match.categorical[col] ?? "";
+      categorical[col] = val;
       vectorInput[col] = val;
     }
+
     return {
       players: { player1, player2 },
       datasetMatch: {
         player1: match.player1,
         player2: match.player2,
         date: match.date,
+        winner: match.winner,
+        score: match.score,
         orientation: alreadyForward ? "forward" : "reverse"
       },
+      playerSnapshots: {
+        [player1]: player1Snapshot || null,
+        [player2]: player2Snapshot || null
+      },
       numeric,
-      categorical: { ...match.categorical },
+      categorical,
       vectorInput
     };
   }
@@ -339,6 +396,48 @@ export class DataLoader {
       for (const lvl of levels) featureNames.push(`${col}__${lvl}`);
     }
     return featureNames;
+  }
+
+  _buildPlayerStats(metaRows) {
+    const stats = new Map();
+    const update = (player, rank, pts, timestamp, dateStr) => {
+      if (!player) return;
+      const time = Number.isFinite(timestamp) ? timestamp : -Infinity;
+      const existing = stats.get(player);
+      if (!existing || time > existing.timestamp) {
+        stats.set(player, {
+          rank: Number.isFinite(rank) ? rank : null,
+          pts: Number.isFinite(pts) ? pts : null,
+          timestamp: time,
+          date: dateStr || null
+        });
+      }
+    };
+    for (const meta of metaRows) {
+      update(meta.player1, meta.rank1, meta.pts1, meta.timestamp, meta.date);
+      update(meta.player2, meta.rank2, meta.pts2, meta.timestamp, meta.date);
+    }
+    return stats;
+  }
+
+  _collectCategoryOptions(metaRows) {
+    const sets = new Map();
+    for (const col of this.categoricalCols) {
+      sets.set(col, new Set());
+    }
+    for (const meta of metaRows) {
+      for (const col of this.categoricalCols) {
+        const val = meta.categorical[col];
+        if (val && sets.has(col)) {
+          sets.get(col).add(val);
+        }
+      }
+    }
+    const map = new Map();
+    for (const [col, set] of sets.entries()) {
+      map.set(col, Array.from(set.values()).sort((a, b) => a.localeCompare(b)));
+    }
+    return map;
   }
 
   _fitScaler(X, featureNames) {

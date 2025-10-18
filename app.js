@@ -6,6 +6,7 @@ import { ModelMLP } from "./gru.js";
 
 const tf = window.tf; // Use global TensorFlow.js loaded via <script>
 const LOG_MAX_LINES = 400;
+const SCENARIO_YEAR = 2025;
 
 let loader = null;
 let model = null;
@@ -27,6 +28,9 @@ const els = {
   predictPanel: document.getElementById("predictPanel"),
   player1Select: document.getElementById("player1Select"),
   player2Select: document.getElementById("player2Select"),
+  surfaceSelect: document.getElementById("surfaceSelect"),
+  courtSelect: document.getElementById("courtSelect"),
+  roundSelect: document.getElementById("roundSelect"),
   featureTableBody: document.getElementById("featureTableBody"),
   matchSummary: document.getElementById("matchSummary"),
   predictBtn: document.getElementById("predictBtn"),
@@ -41,6 +45,12 @@ const els = {
   dropoutInput: document.getElementById("dropoutRate"),
   clearLogsBtn: document.getElementById("clearLogsBtn"),
 };
+
+const CATEGORY_FIELDS = [
+  { key: "Surface", el: els.surfaceSelect, placeholder: "Select surface…" },
+  { key: "Court", el: els.courtSelect, placeholder: "Select court…" },
+  { key: "Round", el: els.roundSelect, placeholder: "Select round…" }
+];
 
 function log(msg) {
   const time = new Date().toLocaleTimeString();
@@ -62,7 +72,7 @@ function enableTraining(enabled) {
 function showPredictPanel(show) {
   els.predictPanel.style.display = show ? "block" : "none";
   if (!show) {
-    resetAutoPredictPanel("Select two players to pull the latest matchup stats from the dataset.");
+    resetAutoPredictPanel(`Select two players to build a ${SCENARIO_YEAR} matchup from the dataset.`);
   } else {
     updateAutoPreview();
   }
@@ -127,7 +137,8 @@ function buildPredictForm() {
   els.player1Select.innerHTML = player1Options.join("");
   els.player1Select.value = "";
   setPlayer2Placeholder("Select Player 1 first…");
-  resetAutoPredictPanel("Select two players to pull the latest matchup stats from the dataset.");
+  buildCategoryControls();
+  resetAutoPredictPanel(`Select two players to build a ${SCENARIO_YEAR} matchup from the dataset.`);
 }
 
 function resetAutoPredictPanel(message) {
@@ -137,12 +148,82 @@ function resetAutoPredictPanel(message) {
   currentAutoVector = null;
   currentAutoPayload = null;
   els.predictBtn.disabled = true;
+  resetCategoryControls();
 }
 
 function setPlayer2Placeholder(text) {
   els.player2Select.innerHTML = `<option value="">${escapeHtml(text)}</option>`;
   els.player2Select.value = "";
   els.player2Select.disabled = true;
+}
+
+function buildCategoryControls() {
+  if (!loader) {
+    CATEGORY_FIELDS.forEach(({ el, placeholder }) => {
+      if (el) {
+        el.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
+        el.value = "";
+        el.disabled = true;
+      }
+    });
+    return;
+  }
+  CATEGORY_FIELDS.forEach(({ key, el, placeholder }) => {
+    if (!el) return;
+    const options = loader.getCategoryOptions(key);
+    const optionHtml = [
+      `<option value="">${escapeHtml(placeholder)}</option>`,
+      ...options.map((val) => {
+        const safe = escapeHtml(val);
+        return `<option value="${safe}">${safe}</option>`;
+      })
+    ];
+    el.innerHTML = optionHtml.join("");
+    el.value = "";
+    el.disabled = true;
+  });
+}
+
+function resetCategoryControls() {
+  CATEGORY_FIELDS.forEach(({ el }) => {
+    if (!el) return;
+    el.value = "";
+    el.disabled = true;
+  });
+}
+
+function applyCategoryDefaultsFromPayload(payload) {
+  CATEGORY_FIELDS.forEach(({ key, el }) => {
+    if (!el) return;
+    el.disabled = false;
+    const candidate = payload.categorical?.[key] ?? "";
+    const resolved = setSelectValue(el, candidate);
+    payload.categorical[key] = resolved;
+    if (payload.vectorInput) payload.vectorInput[key] = resolved;
+    if (currentAutoVector) currentAutoVector[key] = resolved;
+  });
+}
+
+function setSelectValue(selectEl, candidate) {
+  const safe = (candidate ?? "").toString();
+  const options = Array.from(selectEl?.options || []);
+  if (safe && options.some((opt) => opt.value === safe)) {
+    selectEl.value = safe;
+  } else {
+    selectEl.value = "";
+  }
+  return selectEl.value || "";
+}
+
+function handleCategorySelectChange(column) {
+  if (!currentAutoPayload || !currentAutoVector) return;
+  const field = CATEGORY_FIELDS.find((cfg) => cfg.key === column);
+  if (!field || !field.el) return;
+  const value = field.el.value || "";
+  currentAutoPayload.categorical[column] = value;
+  if (currentAutoPayload.vectorInput) currentAutoPayload.vectorInput[column] = value;
+  currentAutoVector[column] = value;
+  renderAutoFeatureTable(currentAutoPayload);
 }
 
 function populatePlayer2Options(player1) {
@@ -183,7 +264,7 @@ function handlePlayer1Change() {
   const player1 = els.player1Select.value;
   if (!player1) {
     setPlayer2Placeholder("Select Player 1 first…");
-    resetAutoPredictPanel("Select two players to pull the latest matchup stats from the dataset.");
+    resetAutoPredictPanel(`Select two players to build a ${SCENARIO_YEAR} matchup from the dataset.`);
     return;
   }
 
@@ -206,7 +287,7 @@ function updateAutoPreview() {
   const player2 = els.player2Select.value;
   if (!player1) {
     setPlayer2Placeholder("Select Player 1 first…");
-    resetAutoPredictPanel("Select two players to pull the latest matchup stats from the dataset.");
+    resetAutoPredictPanel(`Select two players to build a ${SCENARIO_YEAR} matchup from the dataset.`);
     return;
   }
   if (!player2) {
@@ -222,10 +303,14 @@ function updateAutoPreview() {
     resetAutoPredictPanel("No matchup with these players was found in the dataset. Try another pairing.");
     return;
   }
-  currentAutoVector = payload.vectorInput;
+  payload.numeric.year = SCENARIO_YEAR;
+  payload.vectorInput.year = SCENARIO_YEAR;
   currentAutoPayload = payload;
-  renderAutoFeatureTable(payload);
-  els.matchSummary.textContent = describeMatchSummary(payload);
+  currentAutoVector = { ...payload.vectorInput };
+  currentAutoVector.year = SCENARIO_YEAR;
+  applyCategoryDefaultsFromPayload(currentAutoPayload);
+  renderAutoFeatureTable(currentAutoPayload);
+  els.matchSummary.textContent = describeMatchSummary(currentAutoPayload);
   if (!model) {
     els.predictBtn.disabled = true;
     els.predictOut.textContent = "Train or load a model to enable prediction.";
@@ -243,14 +328,25 @@ function renderAutoFeatureTable(payload) {
   });
   loader.categoricalCols.forEach((col) => {
     const value = payload.categorical[col] ?? "";
-    rows.push(`<tr><td>${col}</td><td>${value || "—"}</td></tr>`);
+    const display = value ? escapeHtml(value) : "—";
+    rows.push(`<tr><td>${col}</td><td>${display}</td></tr>`);
   });
   els.featureTableBody.innerHTML = rows.join("");
 }
 
 function formatFeatureValue(key, value) {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  if (key === "year") return value.toString();
+  if (key === "year") return `${value} (scenario year)`;
+  if (key === "rank_diff") {
+    const p1 = currentAutoPayload?.players?.player1 || "Player 1";
+    const p2 = currentAutoPayload?.players?.player2 || "Player 2";
+    return `${Number(value).toFixed(0)} (${p2} rank − ${p1} rank)`;
+  }
+  if (key === "pts_diff") {
+    const p1 = currentAutoPayload?.players?.player1 || "Player 1";
+    const p2 = currentAutoPayload?.players?.player2 || "Player 2";
+    return `${Number(value).toFixed(0)} (${p1} pts − ${p2} pts from last meeting)`;
+  }
   if (key === "last_winner") {
     const label = currentAutoPayload?.players?.player1 || "Player 1";
     return `${value} (${value === 1 ? `${label} won last` : `${label} did not win last`})`;
@@ -261,20 +357,85 @@ function formatFeatureValue(key, value) {
 }
 
 function describeMatchSummary(payload) {
-  const { datasetMatch, players } = payload;
-  const parts = [];
-  if (datasetMatch?.date) parts.push(`Latest record: ${datasetMatch.date}`);
-  else parts.push("Latest available record");
-  if (datasetMatch?.player1 && datasetMatch?.player2) {
-    parts.push(`source matchup ${datasetMatch.player1} vs ${datasetMatch.player2}`);
-    if (datasetMatch.orientation === "reverse") {
-      parts.push("(order flipped to match your selection)");
-    }
-  }
+  const { datasetMatch, players, playerSnapshots } = payload;
+  const segments = [];
   if (players?.player1 && players?.player2) {
-    parts.push(`→ applying to ${players.player1} vs ${players.player2}`);
+    segments.push(`${players.player1} vs ${players.player2} planned for ${SCENARIO_YEAR}.`);
+  } else {
+    segments.push(`Scenario year fixed to ${SCENARIO_YEAR}.`);
   }
-  return parts.join(" ");
+
+  if (datasetMatch?.player1 || datasetMatch?.player2 || datasetMatch?.date) {
+    let line = "Latest recorded meeting";
+    if (datasetMatch.player1 && datasetMatch.player2) {
+      line += `: ${datasetMatch.player1} vs ${datasetMatch.player2}`;
+    }
+    if (datasetMatch.date) {
+      line += ` on ${datasetMatch.date}`;
+    }
+    if (datasetMatch.winner) {
+      line += ` — winner ${datasetMatch.winner}`;
+    }
+    if (datasetMatch.score) {
+      const cleanScore = datasetMatch.score.replace(/\s+/g, " ").trim();
+      if (cleanScore.length > 0) {
+        line += ` (${cleanScore})`;
+      }
+    }
+    if (datasetMatch.orientation === "reverse") {
+      line += " (order flipped to match your selection)";
+    }
+    segments.push(`${line}.`);
+  } else {
+    segments.push("Latest head-to-head record pulled from dataset.");
+  }
+
+  if (players?.player1 && players?.player2) {
+    const snapshotLine = buildSnapshotLine(
+      players.player1,
+      playerSnapshots?.[players.player1],
+      players.player2,
+      playerSnapshots?.[players.player2]
+    );
+    if (snapshotLine) segments.push(snapshotLine);
+  }
+
+  segments.push("Points difference and last_winner come from the most recent head-to-head meeting.");
+  segments.push("Adjust surface, court, and round selectors to reflect your planned conditions.");
+  return segments.join(" ");
+}
+
+function buildSnapshotLine(player1Name, player1Snap, player2Name, player2Snap) {
+  const details = [];
+  const left = formatSnapshotSummary(player1Name, player1Snap);
+  const right = formatSnapshotSummary(player2Name, player2Snap);
+  if (left) details.push(left);
+  if (right) details.push(right);
+  if (details.length === 0) return null;
+  return `Latest rankings — ${details.join("; ")}.`;
+}
+
+function formatSnapshotSummary(name, snap) {
+  if (!name) return null;
+  if (!snap || (!isFiniteNumber(snap.rank) && !isFiniteNumber(snap.pts))) {
+    return `${name}: no recent ranking data`;
+  }
+  const pieces = [];
+  if (isFiniteNumber(snap.rank)) {
+    pieces.push(`rank ${Math.round(snap.rank)}`);
+  }
+  if (isFiniteNumber(snap.pts)) {
+    pieces.push(`${Math.round(snap.pts).toLocaleString()} pts`);
+  }
+  let text = `${name}: ${pieces.join(", ")}`;
+  if (snap.date) {
+    text += ` (as of ${snap.date})`;
+  }
+  return text;
+}
+
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 async function trainModel() {
@@ -403,6 +564,10 @@ els.loadModelBtn.addEventListener("click", async () => {
     alert("No saved model found or load failed.");
   }
 });
+CATEGORY_FIELDS.forEach(({ key, el }) => {
+  if (!el) return;
+  el.addEventListener("change", () => handleCategorySelectChange(key));
+});
 els.player1Select.addEventListener("change", handlePlayer1Change);
 els.player2Select.addEventListener("change", updateAutoPreview);
 els.predictBtn.addEventListener("click", handlePredict);
@@ -414,6 +579,7 @@ els.clearLogsBtn.addEventListener("click", () => {
 // Init
 console.log("🚀 App initialized — calling autoLoadCSV()");
 enableTraining(false);
+buildCategoryControls();
 showPredictPanel(false);
 autoLoadCSV();
 console.log("✅ autoLoadCSV() call placed after init");
