@@ -76,6 +76,11 @@ header h1 {
   margin-top: 16px;
 }
 
+.hyper-grid .grid-break {
+  grid-column: 1 / -1;
+  height: 0;
+}
+
 .hyper-grid label {
   display: flex;
   flex-direction: column;

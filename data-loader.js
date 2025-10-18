@@ -75,13 +75,18 @@ export class DataLoader {
       score: (row["Score"] ?? "").toString().trim()
     }));
 
+    this._recomputeDerivedColumns(raw, metaRows);
+
     // Drop leakage columns; cast types and enrich metadata snapshot
     raw.forEach((row, idx) => {
       const meta = metaRows[idx];
       row[this.labelCol] = this._toNumber(row[this.labelCol]);
       meta.label = row[this.labelCol];
       for (const c of this.numericCols) {
-        const num = this._toNumber(row[c]);
+        let num = this._toNumber(row[c]);
+        if (!Number.isFinite(num) && c === "last_winner") {
+          num = 0;
+        }
         row[c] = num;
         meta.numeric[c] = num;
       }
@@ -265,6 +270,88 @@ export class DataLoader {
       y.push(Math.round(r[this.labelCol]));
     }
     return { X, y, featureNames: resolvedFeatureNames };
+  }
+
+  _recomputeDerivedColumns(rows, metaRows) {
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    const pairWins = new Map();
+    const lastWinnerMap = new Map();
+    const surfaceRecords = new Map();
+
+    const makePairKey = (a, b) => {
+      return [a, b].sort((x, y) => x.localeCompare(y)).join("|||");
+    };
+    const makeSurfaceKey = (player, surface) => `${player}|||${surface}`;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const meta = metaRows?.[i];
+      const player1 = meta?.player1 ?? (row["Player_1"] ?? "").toString().trim();
+      const player2 = meta?.player2 ?? (row["Player_2"] ?? "").toString().trim();
+      const surface = meta?.surface ?? (row["Surface"] ?? "").toString().trim();
+      const winner = meta?.winner ?? (row["Winner"] ?? "").toString().trim();
+
+      if (!player1 || !player2) {
+        row["h2h_advantage"] = 0;
+        row["last_winner"] = Number.NaN;
+        row["surface_winrate_adv"] = 0;
+        continue;
+      }
+
+      const pairKey = makePairKey(player1, player2);
+      if (!pairWins.has(pairKey)) pairWins.set(pairKey, [0, 0]);
+      const wins = pairWins.get(pairKey);
+
+      const sorted = pairKey.split("|||");
+      const player1IsFirst = player1 === sorted[0];
+      const adv = player1IsFirst ? wins[0] - wins[1] : wins[1] - wins[0];
+      row["h2h_advantage"] = adv;
+
+      const labelVal = this._toNumber(row[this.labelCol]);
+      if (Number.isFinite(labelVal)) {
+        if (labelVal === 1) {
+          if (player1IsFirst) wins[0] += 1;
+          else wins[1] += 1;
+        } else if (labelVal === 0) {
+          if (player1IsFirst) wins[1] += 1;
+          else wins[0] += 1;
+        }
+      } else if (winner) {
+        if (winner === sorted[0]) wins[0] += 1;
+        else if (winner === sorted[1]) wins[1] += 1;
+      }
+
+      const prevWinner = lastWinnerMap.get(pairKey);
+      if (prevWinner === player1) row["last_winner"] = 1;
+      else if (prevWinner === player2) row["last_winner"] = 0;
+      else row["last_winner"] = Number.NaN;
+      if (winner) lastWinnerMap.set(pairKey, winner);
+      else if (Number.isFinite(labelVal)) {
+        lastWinnerMap.set(pairKey, labelVal === 1 ? player1 : player2);
+      }
+
+      const surfaceKey1 = makeSurfaceKey(player1, surface);
+      const surfaceKey2 = makeSurfaceKey(player2, surface);
+      if (!surfaceRecords.has(surfaceKey1)) surfaceRecords.set(surfaceKey1, { wins: 0, total: 0 });
+      if (!surfaceRecords.has(surfaceKey2)) surfaceRecords.set(surfaceKey2, { wins: 0, total: 0 });
+
+      const stats1 = surfaceRecords.get(surfaceKey1);
+      const stats2 = surfaceRecords.get(surfaceKey2);
+      const winrate1 = stats1.total > 0 ? stats1.wins / stats1.total : Number.NaN;
+      const winrate2 = stats2.total > 0 ? stats2.wins / stats2.total : Number.NaN;
+      let diff = winrate1 - winrate2;
+      if (!Number.isFinite(diff)) diff = 0;
+      row["surface_winrate_adv"] = diff;
+
+      stats1.total += 1;
+      stats2.total += 1;
+      let matchWinner = winner;
+      if (!matchWinner && Number.isFinite(labelVal)) {
+        matchWinner = labelVal === 1 ? player1 : player2;
+      }
+      if (matchWinner === player1) stats1.wins += 1;
+      else if (matchWinner === player2) stats2.wins += 1;
+    }
   }
 
   _parseDate(str) {
