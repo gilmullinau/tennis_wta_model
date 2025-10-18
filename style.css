@@ -71,8 +71,8 @@ header h1 {
 
 .hyper-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
   margin-top: 16px;
 }
 
@@ -83,8 +83,9 @@ header h1 {
   font-size: 13px;
 }
 
-.hyper-grid input {
+.hyper-grid input[type="number"] {
   width: 100%;
+  padding: 6px 8px;
 }
 
 .hyper-grid input[disabled] {
