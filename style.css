@@ -69,10 +69,11 @@ header h1 {
   font-style: italic;
 }
 
+
 .hyper-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
-  gap: 8px;
+  gap: 14px;
   margin-top: 16px;
 }
 

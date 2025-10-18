@@ -39,7 +39,7 @@ export class ModelMLP {
     this.model = model;
   }
 
-  async train(X_train, y_train, { epochs = 20, batchSize = 256, validationSplit = 0.2, onEpochEnd = null } = {}) {
+  async train(X_train, y_train, { epochs = 6, batchSize = 256, validationSplit = 0.2, onEpochEnd = null } = {}) {
     if (!this.model) throw new Error("Model not built. Call build() first.");
     const cb = {
       onEpochEnd: async (epoch, logs) => {
