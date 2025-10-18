@@ -117,11 +117,16 @@ async function autoLoadCSV() {
 function buildPredictForm() {
   if (!loader || !dataset) return;
   const players = loader.getPlayerNames();
-  const options = ["<option value=\"\">Select…</option>", ...players.map((p) => `<option value="${p}">${p}</option>`)];
-  els.player1Select.innerHTML = options.join("");
-  els.player2Select.innerHTML = options.join("");
+  const player1Options = [
+    "<option value=\"\">Select…</option>",
+    ...players.map((p) => {
+      const safe = escapeHtml(p);
+      return `<option value="${safe}">${safe}</option>`;
+    })
+  ];
+  els.player1Select.innerHTML = player1Options.join("");
   els.player1Select.value = "";
-  els.player2Select.value = "";
+  setPlayer2Placeholder("Select Player 1 first…");
   resetAutoPredictPanel("Select two players to pull the latest matchup stats from the dataset.");
 }
 
@@ -134,12 +139,78 @@ function resetAutoPredictPanel(message) {
   els.predictBtn.disabled = true;
 }
 
+function setPlayer2Placeholder(text) {
+  els.player2Select.innerHTML = `<option value="">${escapeHtml(text)}</option>`;
+  els.player2Select.value = "";
+  els.player2Select.disabled = true;
+}
+
+function populatePlayer2Options(player1) {
+  const opponents = loader.getOpponentsFor(player1);
+  const prev = els.player2Select.value;
+  if (!opponents || opponents.length === 0) {
+    setPlayer2Placeholder("No opponents available");
+    return { opponents: [], preserved: false };
+  }
+  const optionHtml = [
+    "<option value=\"\">Select…</option>",
+    ...opponents.map((name) => {
+      const safe = escapeHtml(name);
+      return `<option value="${safe}">${safe}</option>`;
+    })
+  ];
+  els.player2Select.innerHTML = optionHtml.join("");
+  els.player2Select.disabled = false;
+  if (prev && opponents.includes(prev)) {
+    els.player2Select.value = prev;
+    return { opponents, preserved: true };
+  }
+  els.player2Select.value = "";
+  return { opponents, preserved: false };
+}
+
+function escapeHtml(str) {
+  return (str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function handlePlayer1Change() {
+  if (!loader) return;
+  const player1 = els.player1Select.value;
+  if (!player1) {
+    setPlayer2Placeholder("Select Player 1 first…");
+    resetAutoPredictPanel("Select two players to pull the latest matchup stats from the dataset.");
+    return;
+  }
+
+  const { opponents, preserved } = populatePlayer2Options(player1);
+  if (opponents.length === 0) {
+    resetAutoPredictPanel(`No recorded opponents for ${player1} in the dataset.`);
+    return;
+  }
+
+  if (preserved && els.player2Select.value) {
+    updateAutoPreview();
+  } else {
+    resetAutoPredictPanel(`Select an opponent for ${player1} to pull their latest matchup stats.`);
+  }
+}
+
 function updateAutoPreview() {
   if (!loader) return;
   const player1 = els.player1Select.value;
   const player2 = els.player2Select.value;
-  if (!player1 || !player2) {
+  if (!player1) {
+    setPlayer2Placeholder("Select Player 1 first…");
     resetAutoPredictPanel("Select two players to pull the latest matchup stats from the dataset.");
+    return;
+  }
+  if (!player2) {
+    resetAutoPredictPanel(`Select an opponent for ${player1} to pull their latest matchup stats.`);
     return;
   }
   if (player1 === player2) {
@@ -332,7 +403,7 @@ els.loadModelBtn.addEventListener("click", async () => {
     alert("No saved model found or load failed.");
   }
 });
-els.player1Select.addEventListener("change", updateAutoPreview);
+els.player1Select.addEventListener("change", handlePlayer1Change);
 els.player2Select.addEventListener("change", updateAutoPreview);
 els.predictBtn.addEventListener("click", handlePredict);
 els.loadFileBtn.addEventListener("click", handleManualFileLoad);

@@ -21,6 +21,7 @@ export class DataLoader {
     this.matchRecords = [];
     this.playerNames = [];
     this.matchIndex = new Map();
+    this.opponentMap = new Map();
     this._flipOnReverse = new Set([
       "rank_diff", "pts_diff", "odd_diff", "h2h_advantage", "surface_winrate_adv"
     ]);
@@ -133,6 +134,12 @@ export class DataLoader {
 
   getPlayerNames() {
     return this.playerNames.slice();
+  }
+
+  getOpponentsFor(player) {
+    if (!player) return [];
+    const opponents = this.opponentMap.get(player);
+    return opponents ? opponents.slice() : [];
   }
 
   getLatestAutoFeatures(player1, player2) {
@@ -254,13 +261,23 @@ export class DataLoader {
     this.matchRecords = metaRows;
     const players = new Set();
     const index = new Map();
+    const opponents = new Map();
+    const registerOpponent = (base, opp) => {
+      if (!base || !opp) return;
+      if (!opponents.has(base)) opponents.set(base, new Set());
+      opponents.get(base).add(opp);
+    };
+
     for (const meta of metaRows) {
       if (meta.player1) players.add(meta.player1);
       if (meta.player2) players.add(meta.player2);
       const key = this._pairKey(meta.player1, meta.player2);
       if (!index.has(key)) index.set(key, []);
       index.get(key).push(meta);
+      registerOpponent(meta.player1, meta.player2);
+      registerOpponent(meta.player2, meta.player1);
     }
+
     for (const arr of index.values()) {
       arr.sort((a, b) => {
         const ta = Number.isFinite(a.timestamp) ? a.timestamp : -Infinity;
@@ -270,6 +287,14 @@ export class DataLoader {
     }
     this.matchIndex = index;
     this.playerNames = Array.from(players.values()).sort((a, b) => a.localeCompare(b));
+    const sortedOpponents = new Map();
+    for (const [player, set] of opponents.entries()) {
+      sortedOpponents.set(
+        player,
+        Array.from(set.values()).sort((a, b) => a.localeCompare(b))
+      );
+    }
+    this.opponentMap = sortedOpponents;
   }
 
   _orientMatchForPlayers(match, player1, player2, alreadyForward) {
