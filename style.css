@@ -56,6 +56,37 @@ header h1 {
   gap: 10px;
 }
 
+.file-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.file-row .small {
+  margin-left: auto;
+  font-style: italic;
+}
+
+.hyper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.hyper-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.hyper-grid input {
+  width: 100%;
+}
+
 button,
 input[type="file"],
 select,
@@ -104,6 +135,12 @@ pre {
   font-size: 13px;
 }
 
+.log-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 10px 0 6px;
+}
+
 .form-row {
   display: flex;
   align-items: center;
@@ -114,6 +151,35 @@ pre {
 label {
   min-width: 160px;
   font-size: 14px;
+}
+
+.player-select-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.player-select-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: auto;
+}
+
+.feature-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.feature-table tr:not(:last-child) td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.feature-table td {
+  padding: 6px 4px;
 }
 
 #predictPanel {
@@ -129,6 +195,10 @@ label {
 .small {
   opacity: 0.8;
   font-size: 12px;
+}
+
+.muted {
+  color: rgba(233, 238, 248, 0.8);
 }
 
 .footer {
@@ -148,5 +218,12 @@ label {
   }
   label {
     min-width: 120px;
+  }
+  .file-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .file-row .small {
+    margin-left: 0;
   }
 }
