@@ -87,6 +87,11 @@ header h1 {
   width: 100%;
 }
 
+.hyper-grid input[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 button,
 input[type="file"],
 select,

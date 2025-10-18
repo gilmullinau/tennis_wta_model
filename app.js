@@ -7,6 +7,12 @@ import { ModelMLP } from "./gru.js";
 const tf = window.tf; // Use global TensorFlow.js loaded via <script>
 const LOG_MAX_LINES = 400;
 const SCENARIO_YEAR = 2025;
+const DEFAULT_HYPERPARAMS = {
+  batchSize: 256,
+  validationSplit: 0.2,
+  hiddenUnits: [128, 64],
+  dropout: 0.3,
+};
 
 let loader = null;
 let model = null;
@@ -586,27 +592,21 @@ console.log("✅ autoLoadCSV() call placed after init");
 
 function readHyperparameters() {
   const epochs = clampInt(els.epochsInput.value, 1, 200, 20);
-  const batchSize = clampInt(els.batchSizeInput.value, 8, 1024, 256);
-  const valSplitRaw = Number.parseFloat(els.valSplitInput.value);
-  const validationSplit = Number.isFinite(valSplitRaw) ? Math.min(Math.max(valSplitRaw, 0.05), 0.4) : 0.2;
-  const layer1 = clampInt(els.layer1Input.value, 4, 512, 128);
-  const layer2 = clampInt(els.layer2Input.value, 0, 512, 64);
-  const dropout = clampFloat(els.dropoutInput.value, 0, 0.8, 0.3);
-  const hiddenUnits = layer2 > 0 ? [layer1, layer2] : [layer1];
   return {
-    training: { epochs, batchSize, validationSplit },
-    architecture: { hiddenUnits, dropout }
+    training: {
+      epochs,
+      batchSize: DEFAULT_HYPERPARAMS.batchSize,
+      validationSplit: DEFAULT_HYPERPARAMS.validationSplit,
+    },
+    architecture: {
+      hiddenUnits: DEFAULT_HYPERPARAMS.hiddenUnits.slice(),
+      dropout: DEFAULT_HYPERPARAMS.dropout,
+    }
   };
 }
 
 function clampInt(value, min, max, fallback) {
   const n = Number.parseInt(value, 10);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(Math.max(n, min), max);
-}
-
-function clampFloat(value, min, max, fallback) {
-  const n = Number.parseFloat(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(n, min), max);
 }
