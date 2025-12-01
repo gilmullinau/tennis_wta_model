@@ -1,25 +1,31 @@
 /* style.css */
 /* Global dark theme consistent with index.html inline vars */
+
 :root {
-  --bg: #0b1020;
+  --bg: #0a0f1d;
   --fg: #e9eef8;
-  --card: #131a33;
-  --accent: #6aa8ff;
-  --border: #24304f;
+  --card: #111831;
+  --accent: #7cc4ff;
+  --accent-2: #8f7cff;
+  --border: #202b45;
+  --muted: #a7b4d8;
 }
 
 body {
   margin: 0;
   font-family: 'Inter', system-ui, sans-serif;
-  background: var(--bg);
+  background: radial-gradient(circle at 20% 20%, rgba(124, 196, 255, 0.12), transparent 35%),
+    radial-gradient(circle at 80% 0%, rgba(143, 124, 255, 0.16), transparent 30%),
+    linear-gradient(135deg, #080c19 0%, #0a1125 35%, #060915 100%);
   color: var(--fg);
   line-height: 1.5;
 }
 
 header {
-  padding: 16px 20px;
+  padding: 18px 20px 22px;
   border-bottom: 1px solid var(--border);
-  background: #0d1428;
+  background: linear-gradient(135deg, rgba(124, 196, 255, 0.15), rgba(17, 24, 49, 0.75));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
 }
 
 header h1 {
@@ -28,19 +34,38 @@ header h1 {
   font-weight: 600;
 }
 
+.subtitle {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 960px;
+}
+
 .container {
-  max-width: 1000px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 18px 16px 26px;
 }
 
 .card {
-  background: var(--card);
+  background: linear-gradient(145deg, rgba(17, 24, 49, 0.95), rgba(13, 19, 36, 0.92));
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 16px;
   margin-bottom: 16px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32), 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 20% 20%, rgba(124, 196, 255, 0.08), transparent 45%),
+    radial-gradient(circle at 90% 10%, rgba(143, 124, 255, 0.08), transparent 35%);
+  opacity: 0.8;
 }
 
 .row {
@@ -48,6 +73,59 @@ header h1 {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.card-header h3 {
+  margin: 2px 0 0;
+  font-size: 18px;
+}
+
+.card-lead {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: linear-gradient(120deg, rgba(124, 196, 255, 0.2), rgba(143, 124, 255, 0.2));
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 12px;
+  border: 1px solid rgba(124, 196, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(124, 196, 255, 0.1) inset, 0 10px 20px rgba(0,0,0,0.25);
+}
+
+.pill::before { content: "✦"; font-size: 11px; }
+
+.pill-glow {
+  background: linear-gradient(120deg, rgba(124, 196, 255, 0.25), rgba(80, 250, 123, 0.18));
+  border-color: rgba(80, 250, 123, 0.4);
+}
+
+.pill-outline {
+  background: transparent;
+  border-color: rgba(124, 196, 255, 0.35);
 }
 
 .btn-row {
@@ -91,20 +169,29 @@ button,
 input[type="file"],
 select,
 input[type="number"] {
-  background: #0f1530;
+  background: linear-gradient(120deg, #0f1530, #101a36);
   color: var(--fg);
   border: 1px solid #2a3862;
   border-radius: 10px;
   padding: 10px 12px;
   transition: all 0.2s ease;
   font-size: 14px;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.35);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 button:hover:not(:disabled),
 select:hover,
 input[type="file"]:hover {
-  background: #1b244a;
+  background: linear-gradient(120deg, #1b244a, #162040);
   border-color: var(--accent);
+  transform: translateY(-1px);
 }
 
 button:disabled {
@@ -117,6 +204,10 @@ button:disabled {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
   min-height: 320px;
+  background: linear-gradient(135deg, rgba(124, 196, 255, 0.06), rgba(143, 124, 255, 0.04));
+  border: 1px solid rgba(124, 196, 255, 0.12);
+  border-radius: 14px;
+  padding: 12px;
 }
 
 .eda-charts {
@@ -131,10 +222,22 @@ button:disabled {
 }
 
 .metric-box {
-  border: 1px solid var(--border);
+  border: 1px solid rgba(124, 196, 255, 0.25);
   border-radius: 12px;
-  padding: 10px 12px;
-  background: #0f1426;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(16, 21, 41, 0.95), rgba(17, 24, 49, 0.85));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(124, 196, 255, 0.08), rgba(143, 124, 255, 0.08));
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .metric-label {
@@ -145,23 +248,26 @@ button:disabled {
 
 .metric-value {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 canvas {
-  background: #0b0f1f;
+  background: radial-gradient(circle at 50% 20%, rgba(124, 196, 255, 0.05), rgba(11, 15, 31, 0.9));
   border-radius: 12px;
   padding: 8px;
+  border: 1px solid rgba(124, 196, 255, 0.15);
 }
 
 pre {
-  background: #0b0f1f;
-  border: 1px solid var(--border);
+  background: linear-gradient(160deg, rgba(11, 15, 31, 0.92), rgba(17, 24, 49, 0.85));
+  border: 1px solid rgba(124, 196, 255, 0.18);
   border-radius: 12px;
   padding: 12px;
   max-height: 180px;
   overflow: auto;
   font-size: 13px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .log-actions {
@@ -180,6 +286,13 @@ pre {
 label {
   min-width: 160px;
   font-size: 14px;
+}
+
+.card-lead + .row,
+.card-lead + .eda-grid,
+.card-lead + .charts,
+.card-lead + form {
+  margin-top: 4px;
 }
 
 #predictPanel {
@@ -202,6 +315,7 @@ label {
   opacity: 0.6;
   font-size: 12px;
   padding: 20px 0 30px;
+  letter-spacing: 0.01em;
 }
 
 .metrics {
