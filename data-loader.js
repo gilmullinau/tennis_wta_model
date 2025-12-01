@@ -67,6 +67,7 @@ export class DataLoader {
 
     // Stratified split on raw rows to avoid leakage
     const { trainRows, testRows } = this._splitRowsStratified(filtered, 0.2, 42);
+    const summary = this._buildSummary(filtered, trainRows, testRows);
 
     // Fit categorical levels and scalers only on training data
     this._fitCategoricals(trainRows);
@@ -88,6 +89,7 @@ export class DataLoader {
       X_train: xTrainTensor, y_train: yTrainTensor,
       X_test: xTestTensor, y_test: yTestTensor,
       featureNames: this.featureNames,
+      summary,
       artifacts: {
         catLevels: this.catLevels,
         scaler: this.scaler,
@@ -197,6 +199,69 @@ export class DataLoader {
       for (const lvl of levels) featureNames.push(`${col}__${lvl}`);
     }
     return featureNames;
+  }
+
+  _buildSummary(rows, trainRows, testRows) {
+    const labelCounts = { 0: 0, 1: 0 };
+    const surfaceCounts = new Map();
+    let minYear = Infinity;
+    let maxYear = -Infinity;
+    const rankDiffs = [];
+
+    for (const r of rows) {
+      const lbl = Math.round(r[this.labelCol]);
+      labelCounts[lbl] = (labelCounts[lbl] ?? 0) + 1;
+
+      const surface = (r.Surface ?? "").toString().trim() || "unknown";
+      surfaceCounts.set(surface, (surfaceCounts.get(surface) ?? 0) + 1);
+
+      const yearVal = Number(r.year);
+      if (Number.isFinite(yearVal)) {
+        minYear = Math.min(minYear, yearVal);
+        maxYear = Math.max(maxYear, yearVal);
+      }
+
+      const rd = Number(r.rank_diff);
+      if (Number.isFinite(rd)) rankDiffs.push(rd);
+    }
+
+    const surfaceObj = {};
+    for (const [k, v] of surfaceCounts.entries()) surfaceObj[k] = v;
+
+    return {
+      totals: { total: rows.length, train: trainRows.length, test: testRows.length },
+      labelCounts,
+      surfaceCounts: surfaceObj,
+      yearRange: {
+        min: Number.isFinite(minYear) ? minYear : null,
+        max: Number.isFinite(maxYear) ? maxYear : null
+      },
+      rankDiffHist: this._histogram(rankDiffs, 15)
+    };
+  }
+
+  _histogram(values, bins = 10) {
+    if (!values.length) return { edges: [], counts: [] };
+    let min = Infinity;
+    let max = -Infinity;
+    for (const v of values) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    if (min === max) {
+      min -= 1;
+      max += 1;
+    }
+    const width = (max - min) / bins;
+    const counts = Array(bins).fill(0);
+    const edges = [];
+    for (let i = 0; i <= bins; i++) edges.push(min + i * width);
+    for (const v of values) {
+      let idx = Math.floor((v - min) / width);
+      if (idx === bins) idx = bins - 1;
+      counts[idx] += 1;
+    }
+    return { edges, counts, min, max };
   }
 
   _fitScaler(X, featureNames) {
