@@ -12,6 +12,9 @@ let model = null;
 let dataset = null;
 let lossChart = null;
 let cmChart = null;
+let classChart = null;
+let surfaceChart = null;
+let rankChart = null;
 
 const els = {
   trainBtn: document.getElementById("trainBtn"),
@@ -35,6 +38,13 @@ const els = {
   layer2Input: document.getElementById("layer2Units"),
   dropoutInput: document.getElementById("dropoutRate"),
   clearLogsBtn: document.getElementById("clearLogsBtn"),
+  edaRows: document.getElementById("edaRows"),
+  edaBalance: document.getElementById("edaBalance"),
+  edaSurface: document.getElementById("edaSurface"),
+  edaYears: document.getElementById("edaYears"),
+  edaClassCanvas: document.getElementById("edaClassChart"),
+  edaSurfaceCanvas: document.getElementById("edaSurfaceChart"),
+  edaRankCanvas: document.getElementById("edaRankChart"),
 };
 
 function log(msg) {
@@ -67,10 +77,14 @@ async function parseAndInit(text) {
     }
     if (lossChart) { lossChart.destroy(); lossChart = null; }
     if (cmChart) { cmChart.destroy(); cmChart = null; }
+    if (classChart) { classChart.destroy(); classChart = null; }
+    if (surfaceChart) { surfaceChart.destroy(); surfaceChart = null; }
+    if (rankChart) { rankChart.destroy(); rankChart = null; }
     loader = new DataLoader();
     dataset = await loader.loadCSVText(text);
     els.info.textContent = `Dataset loaded — Train: ${dataset.X_train.shape[0]}, Test: ${dataset.X_test.shape[0]}, Features: ${dataset.featureNames.length}`;
     log("Dataset loaded successfully.");
+    renderEda(dataset.summary);
     enableTraining(true);
     buildPredictForm();
     els.saveBtn.disabled = true;
@@ -203,6 +217,79 @@ function drawConfusionMatrix({ tp, tn, fp, fn }) {
       maintainAspectRatio: false,
       plugins: { legend: { position: "bottom" } },
       scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+function renderEda(summary) {
+  if (!summary) return;
+  const { totals, labelCounts, surfaceCounts, yearRange, rankDiffHist } = summary;
+  els.edaRows.textContent = `${totals.total} rows (${totals.train} train / ${totals.test} test)`;
+  els.edaBalance.textContent = `y=1: ${labelCounts[1] ?? 0} | y=0: ${labelCounts[0] ?? 0}`;
+  const topSurfaces = Object.entries(surfaceCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
+  els.edaSurface.textContent = topSurfaces || "—";
+  const yearText = yearRange.min && yearRange.max ? `${yearRange.min} – ${yearRange.max}` : "—";
+  els.edaYears.textContent = yearText;
+
+  drawClassChart(labelCounts);
+  drawSurfaceChart(surfaceCounts);
+  drawRankHistogram(rankDiffHist);
+}
+
+function drawClassChart(labelCounts) {
+  const ctx = els.edaClassCanvas.getContext("2d");
+  if (classChart) classChart.destroy();
+  classChart = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: ["y=0", "y=1"],
+      datasets: [{ data: [labelCounts[0] ?? 0, labelCounts[1] ?? 0], backgroundColor: ["#6aa8ff", "#ff6384"] }]
+    },
+    options: { plugins: { legend: { position: "bottom" } } }
+  });
+}
+
+function drawSurfaceChart(surfaceCounts) {
+  const ctx = els.edaSurfaceCanvas.getContext("2d");
+  if (surfaceChart) surfaceChart.destroy();
+  const entries = Object.entries(surfaceCounts).sort((a, b) => b[1] - a[1]);
+  surfaceChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: entries.map(([k]) => k),
+      datasets: [{ label: "Matches", data: entries.map(([, v]) => v), backgroundColor: "#6aa8ff" }]
+    },
+    options: { indexAxis: "y", responsive: true, plugins: { legend: { display: false } } }
+  });
+}
+
+function drawRankHistogram(hist) {
+  const ctx = els.edaRankCanvas.getContext("2d");
+  if (rankChart) rankChart.destroy();
+  if (!hist || hist.edges.length === 0) {
+    rankChart = new Chart(ctx, { type: "bar", data: { labels: [], datasets: [] } });
+    return;
+  }
+  const labels = [];
+  for (let i = 0; i < hist.edges.length - 1; i++) {
+    const a = hist.edges[i];
+    const b = hist.edges[i + 1];
+    labels.push(`${a.toFixed(0)} to ${b.toFixed(0)}`);
+  }
+  rankChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ label: "Count", data: hist.counts, backgroundColor: "#50fa7b" }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { maxRotation: 45, minRotation: 45 } }, y: { beginAtZero: true } }
     }
   });
 }

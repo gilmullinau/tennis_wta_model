@@ -45,6 +45,42 @@
     </div>
 
     <div class="card">
+      <h3 style="margin-top:0;">Quick EDA Snapshot</h3>
+      <div class="eda-grid">
+        <div class="metric-box">
+          <div class="metric-label">Rows (train / test)</div>
+          <div class="metric-value" id="edaRows">—</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Class balance (y=1 / y=0)</div>
+          <div class="metric-value" id="edaBalance">—</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Surface coverage</div>
+          <div class="metric-value" id="edaSurface">—</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Year span</div>
+          <div class="metric-value" id="edaYears">—</div>
+        </div>
+      </div>
+      <div class="charts eda-charts">
+        <div style="height:240px;">
+          <canvas id="edaClassChart"></canvas>
+          <div class="small">Class distribution</div>
+        </div>
+        <div style="height:240px;">
+          <canvas id="edaSurfaceChart"></canvas>
+          <div class="small">Surface distribution</div>
+        </div>
+        <div style="height:240px;">
+          <canvas id="edaRankChart"></canvas>
+          <div class="small">Rank difference (Player1 - Player2)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h3 style="margin-top:0;">Training Progress & Results</h3>
       <div class="charts">
         <div style="height:280px;">

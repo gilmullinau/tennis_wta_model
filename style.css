@@ -119,6 +119,35 @@ button:disabled {
   min-height: 320px;
 }
 
+.eda-charts {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.eda-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.metric-box {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #0f1426;
+}
+
+.metric-label {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.metric-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
 canvas {
   background: #0b0f1f;
   border-radius: 12px;
